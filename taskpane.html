@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.0.2">
+<link rel="stylesheet" href="taskpane.css?v=1.0.3">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -12,6 +12,8 @@
   <h1>Gráficos FP&amp;A</h1>
   <span id="versao" class="muted"></span>
 </header>
+
+<div id="avisoVersao" class="aviso" hidden><span></span> <button>Atualizar agora</button></div>
 
 <div id="avisoDemo" class="aviso" hidden>
   Modo demonstração (fora do Excel). Escolha um exemplo:
@@ -40,6 +42,7 @@
   <p id="resumoDados" class="muted"></p>
   <label class="check"><input type="checkbox" id="autoLinhas" checked> Ajustar às linhas da tabela (inclui/exclui linhas até a 1ª linha vazia)</label>
   <label class="check"><input type="checkbox" id="autoAtualizar" checked> Atualizar gráficos automaticamente quando os números mudarem</label>
+  <label class="check"><input type="checkbox" id="autoAbrir"> Abrir este painel sempre que este arquivo for aberto (salve o arquivo depois)</label>
 </section>
 
 <!-- PRÉ-VISUALIZAÇÃO -->
@@ -151,6 +154,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.0.2"></script>
+<script type="module" src="taskpane.js?v=1.0.3"></script>
 </body>
 </html>

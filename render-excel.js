@@ -8,7 +8,7 @@
 // no pior caso, mantém a linha contínua em vez de derrubar o gráfico inteiro.
 // Se algo essencial falhar, as formas parciais são apagadas.
 // =============================================================================
-import { svgHachura } from "./render-svg.js?v=1.0.2";
+import { svgHachura } from "./render-svg.js?v=1.0.3";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const HALIGN = { left: "Left", center: "Center", right: "Right" };

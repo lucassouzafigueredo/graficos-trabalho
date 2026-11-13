@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.2";
-import { renderSVG } from "./render-svg.js?v=1.0.2";
-import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.2";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.3";
+import { renderSVG } from "./render-svg.js?v=1.0.3";
+import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.3";
 import {
   todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.2";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.2";
-import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.2";
+} from "./styles.js?v=1.0.3";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.3";
+import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.3";
 
-const VERSAO = "1.0.2";
+const VERSAO = "1.0.3";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -395,6 +395,43 @@ function carregarDemo(i) {
   escreverForm(); preview();
 }
 
+
+
+// ----------------------------------------------------------------- abrir com o arquivo
+// Grava na pasta de trabalho a configuração padrão do Office que reabre este painel
+// sempre que o arquivo for aberto (útil para relatórios recorrentes com gráficos).
+function lerAutoAbrir() {
+  try { $("autoAbrir").checked = !!Office.context.document.settings.get("Office.AutoShowTaskpaneWithDocument"); } catch { /* fora do Excel */ }
+}
+function gravarAutoAbrir(ligar) {
+  return new Promise((ok, falha) => {
+    const cfg = Office.context.document.settings;
+    if (ligar) cfg.set("Office.AutoShowTaskpaneWithDocument", true); else cfg.remove("Office.AutoShowTaskpaneWithDocument");
+    cfg.saveAsync((r) => (r.status === Office.AsyncResultStatus.Succeeded ? ok() : falha(r.error)));
+  });
+}
+
+// ----------------------------------------------------------------- aviso de nova versão
+// Compara a versão carregada com a publicada (versao.json, sem cache). Se houver uma
+// mais nova, mostra um aviso com botão que recarrega o painel já na versão nova.
+const numVersao = (v) => v.split(".").map(Number).reduce((a, x) => a * 1000 + x, 0);
+async function verificarAtualizacao() {
+  try {
+    const r = await fetch(`versao.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const { versao } = await r.json();
+    if (numVersao(versao) <= numVersao(VERSAO)) return;
+    const el = $("avisoVersao");
+    el.hidden = false;
+    el.querySelector("span").textContent = `Nova versão disponível (v${versao}).`;
+    el.querySelector("button").onclick = () => {
+      const u = new URL(location.href);
+      u.searchParams.set("v", versao);
+      location.replace(u.toString());
+    };
+  } catch { /* sem rede ou rodando localmente */ }
+}
+
 // ----------------------------------------------------------------- inicialização
 function ligarEventos() {
   $("btnSelecao").onclick = () => seguro(usarSelecao);
@@ -457,6 +494,7 @@ function ligarEventos() {
 async function iniciar(noExcel) {
   st.noExcel = noExcel;
   $("versao").textContent = "v" + VERSAO;
+  verificarAtualizacao();
   popularEstilos();
   ligarEventos();
   escreverForm();
@@ -469,6 +507,11 @@ async function iniciar(noExcel) {
     carregarDemo(0);
     return;
   }
+  lerAutoAbrir();
+  $("autoAbrir").onchange = (e) => seguro(async () => {
+    await gravarAutoAbrir(e.target.checked);
+    msg(e.target.checked ? "Pronto: salve o arquivo (Ctrl+S) e o painel abrirá junto com ele." : "O painel não abrirá mais automaticamente com este arquivo.", "ok");
+  });
   await seguro(async () => { await recarregarLista(); await registrarEventos(); });
 }
 
