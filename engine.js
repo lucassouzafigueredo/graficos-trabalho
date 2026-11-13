@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.1.2";
+import { fmtNum, fmtPct } from "./formats.js?v=1.1.3";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -476,27 +476,25 @@ function textoVariacao(va, vb, modo) {
 }
 
 // Linha de referência tracejada que sai da barra de origem (idx) até xFim, na altura y.
-// Ela é interrompida só onde passaria por cima de um rótulo de valor ou do corpo de
-// outra barra, e continua logo depois, mantendo a ligação visual com a barra comparada.
+// Fica POR CIMA das barras (contínua) e só se interrompe onde passaria sobre um texto
+// já desenhado (rótulos de valor, inclusive os de dentro das barras) ou sobre balões
+// e setas de outras variações.
 function linhaReferencia(tela, idx, y, xFim, cor) {
-  const e = tela.e, tam = e.fonte + 6, folga = 3;
+  const folga = 3;
   const x0 = tela.barras[idx].cx + tela.bw / 2;
   const bloqueios = [];
-  for (let k = idx + 1; k < tela.barras.length; k++) {
-    const b = tela.barras[k];
-    const y0 = tela.Y(tela.clip(0)), yn = tela.Y(tela.clip(b.nivel));
-    // corpo da barra
-    if (y > Math.min(y0, yn) + 0.5 && y < Math.max(y0, yn) - 0.5)
-      bloqueios.push([b.cx - tela.bw / 2 - folga, b.cx + tela.bw / 2 + folga]);
-    // rótulo de valor (acima da barra positiva, abaixo da negativa)
-    const larg = String(fmtNum(b.valor)).length * tam * 0.6 + 8;
-    const [rTopo, rBase] = b.nivel >= 0 ? [yn - tam * 1.45, yn] : [yn, yn + tam * 1.45];
-    if (y >= rTopo - 1 && y <= rBase + 1) bloqueios.push([b.cx - larg / 2 - folga, b.cx + larg / 2 + folga]);
+  for (const q of tela.p) {
+    if (q.t !== "text" || !q.text) continue;
+    const linhas = String(q.text).split("\n");
+    const larg = Math.min(q.w, Math.max(...linhas.map((l) => l.length)) * q.size * 0.56 + 4);
+    const alt = q.size * 1.25 * (q.wrap ? 3 : linhas.length);
+    const topo = q.valign === "top" ? q.y : q.valign === "middle" ? q.y + q.h / 2 - alt / 2 : q.y + q.h - alt;
+    if (y < topo - 1 || y > topo + alt + 1) continue;
+    const xi = q.align === "left" ? q.x : q.align === "right" ? q.x + q.w - larg : q.x + q.w / 2 - larg / 2;
+    bloqueios.push([xi - folga, xi + larg + folga]);
   }
-  // balões, textos e setas de variações já desenhadas
   for (const [bx1, bx2, by1, by2] of tela.caixasAnot ?? [])
     if (y >= by1 - 1 && y <= by2 + 1) bloqueios.push([bx1 - folga, bx2 + folga]);
-  // subtrai os bloqueios do trecho [x0, xFim]
   bloqueios.sort((p, q) => p[0] - q[0]);
   let x = x0;
   for (const [a, z] of bloqueios) {

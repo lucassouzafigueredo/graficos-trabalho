@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.1.2";
-import { renderSVG } from "./render-svg.js?v=1.1.2";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.1.2";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.1.3";
+import { renderSVG } from "./render-svg.js?v=1.1.3";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.1.3";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.1.2";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.1.2";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.1.2";
+} from "./styles.js?v=1.1.3";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.1.3";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.1.3";
 
-const VERSAO = "1.1.2";
+const VERSAO = "1.1.3";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
