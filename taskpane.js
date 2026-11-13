@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js";
-import { renderSVG } from "./render-svg.js";
-import { inserirNoExcel, listarGraficos } from "./render-excel.js";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.1";
+import { renderSVG } from "./render-svg.js?v=1.0.1";
+import { inserirNoExcel, listarGraficos } from "./render-excel.js?v=1.0.1";
 import {
   todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js";
-import { parseA1, montarA1, intersecta } from "./a1.js";
-import { DEMOS, textos as textosDemo } from "./demo.js";
+} from "./styles.js?v=1.0.1";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.1";
+import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.1";
 
-const VERSAO = "1.0.0";
+const VERSAO = "1.0.1";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 

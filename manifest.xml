@@ -9,7 +9,7 @@
            xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
            xsi:type="TaskPaneApp">
   <Id>cda1dd1f-733f-4a18-8f85-7b11a933efaf</Id>
-  <Version>1.0.0.0</Version>
+  <Version>1.0.0.0</Version>  <!-- só mude quando o próprio manifesto mudar (aí redistribua o manifest.xml) -->
   <ProviderName>FP&amp;A</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="Gráficos FP&amp;A"/>

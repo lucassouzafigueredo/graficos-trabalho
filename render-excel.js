@@ -2,7 +2,7 @@
 // Desenha as primitivas do motor como formas nativas do Excel (ExcelApi 1.9)
 // e agrupa tudo num único objeto, com os metadados no Texto Alt.
 // =============================================================================
-import { svgHachura } from "./render-svg.js";
+import { svgHachura } from "./render-svg.js?v=1.0.1";
 
 const DASH = { solid: "Solid", dash: "Dash", dot: "RoundDot" };
 const HALIGN = { left: "Left", center: "Center", right: "Right" };
