@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.3.0">
+<link rel="stylesheet" href="taskpane.css?v=1.4.0">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -134,7 +134,30 @@
 <!-- ANOTAÇÕES -->
 <section id="secTabela" hidden>
   <h2>Linhas da tabela</h2>
-  <p class="muted">Layout: <b>Conta | Referência (ex.: BGT) | Atual (ex.: Real)</b>. O padrão de cada linha vem do nome da conta; corrija aqui se precisar.</p>
+  <p class="muted">Layout: <b>Conta | Referência(s) (ex.: BGT, FC) | Atual (ex.: Real)</b>. O padrão de cada linha vem do nome da conta; corrija aqui se precisar.</p>
+  <div class="duas">
+    <label>Coluna atual
+      <select id="tabAtual"></select>
+    </label>
+    <label>Ordenar
+      <select id="tabOrdem">
+        <option value="planilha">Ordem da planilha</option>
+        <option value="abs">Maior desvio (|Δ|)</option>
+        <option value="fav">Favorável → desfavorável</option>
+        <option value="pct">Maior desvio %</option>
+      </select>
+    </label>
+  </div>
+  <div class="sub">Comparar contra (lado a lado)</div>
+  <div id="tabRefs" class="checks"></div>
+  <div class="sub">Colunas visíveis</div>
+  <div class="checks">
+    <label class="check"><input type="checkbox" id="tabVisRef" checked> Referência</label>
+    <label class="check"><input type="checkbox" id="tabVisAc" checked> Atual</label>
+    <label class="check"><input type="checkbox" id="tabVisAbs" checked> Δ</label>
+    <label class="check"><input type="checkbox" id="tabVisPct" checked> Δ%</label>
+  </div>
+  <p class="muted">Ao ordenar, as linhas mudam de lugar só dentro de cada bloco entre subtotais, então a DRE continua fechando.</p>
   <div class="duas">
     <label>Unidade
       <select id="tabUnidade">
@@ -210,6 +233,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.3.0"></script>
+<script type="module" src="taskpane.js?v=1.4.0"></script>
 </body>
 </html>

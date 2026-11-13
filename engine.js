@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.3.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.4.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -507,18 +507,58 @@ export function fmtTab(v, spec, comSinal = false) {
   return s;
 }
 
+// Quais colunas numéricas são o "atual" e quais são as referências.
+//   automático: atual = a coluna "Real/AC" (pelo nome) ou a última; referências = as demais (até 3)
+export function colunasTabela(spec, d) {
+  const n = d.nCol;
+  let iAc = Number.isInteger(spec?.colAtual) && spec.colAtual >= 0 && spec.colAtual < n ? spec.colAtual : -1;
+  if (iAc < 0) {
+    const reais = d.cab.map((c, i) => (cenarioDe(c) === "real" ? i : -1)).filter((i) => i >= 0);
+    iAc = reais.length === 1 ? reais[0] : n === 2 ? 1 : reais.length ? reais[reais.length - 1] : n - 1;
+  }
+  let iRefs = Array.isArray(spec?.refs) ? spec.refs.filter((i) => i !== iAc && i >= 0 && i < n) : [];
+  if (!iRefs.length) iRefs = [...Array(n).keys()].filter((i) => i !== iAc).slice(0, 3);
+  return { iAc, iRefs };
+}
+
+export const ORDENS_TABELA = { planilha: "Ordem da planilha", abs: "Maior desvio (|Δ|)", fav: "Mais favorável → mais desfavorável", pct: "Maior desvio % (|Δ%|)" };
+
+// Ordena as linhas dentro de cada bloco entre subtotais (a DRE continua fechando)
+function ordenarLinhas(linhas, ordem) {
+  if (!ordem || ordem === "planilha") return linhas;
+  const chave = (l) => {
+    const dv = l.ac - l.ref;
+    if (ordem === "fav") return -(l.f.inv ? -dv : dv);
+    if (ordem === "pct") return l.ref !== 0 ? -Math.abs(dv / l.ref) : 0;
+    return -Math.abs(dv);
+  };
+  const out = [];
+  let bloco = [];
+  const fechar = () => {
+    bloco.sort((a, b) => (a.outros ? 1 : 0) - (b.outros ? 1 : 0) || chave(a) - chave(b));
+    out.push(...bloco); bloco = [];
+  };
+  linhas.forEach((l) => { if (l.f.res) { fechar(); out.push(l); } else bloco.push(l); });
+  fechar();
+  return out;
+}
+
 function tabela(tela, d, W, spec) {
   const e = tela.e;
   if (d.nCol < 2) throw new Error("A tabela precisa de duas colunas numéricas: Referência (ex.: BGT) e Atual (ex.: Real).");
-  const refNome = d.cab[0] || "Ref", acNome = d.cab[1] || "AC";
+  const { iAc, iRefs } = colunasTabela(spec, d);
+  const nR = iRefs.length;
+  const refNomes = iRefs.map((i) => d.cab[i] || "Ref"), acNome = d.cab[iAc] || "AC";
+  const vis = { ref: true, ac: true, abs: true, pct: true, ...(spec.colunas ?? {}) };
+  if (!vis.ac && !vis.abs && !vis.pct) throw new Error("Deixe visível ao menos uma coluna: Atual, Δ ou Δ%.");
   const iCom = (d.cabTextos ?? []).findIndex((c) => /coment|obs|nota|explic|justif/i.test(c));
   const colCom = iCom >= 0 ? iCom : (d.cabTextos?.length ? 0 : -1);
   let todas = d.rot.map((r, i) => {
-    const ref = num(d.v[i][0]), ac = num(d.v[i][1]);
-    return { r, ref, ac, f: flagsLinha(spec, r, ref, ac), com: colCom >= 0 ? (d.textos[i][colCom] || "") : "" };
+    const refs = iRefs.map((k) => num(d.v[i][k])), ac = num(d.v[i][iAc]);
+    return { r, refs, ref: refs[0], ac, f: flagsLinha(spec, r, refs[0], ac), com: colCom >= 0 ? (d.textos[i][colCom] || "") : "" };
   });
 
-  // Top N: mantém as N linhas (não-subtotal) com maior |Δ| e agrupa o resto em "Outros"
+  // Top N: mantém as N linhas (não-subtotal) com maior |Δ| (1ª referência) e agrupa o resto em "Outros"
   const topN = +spec.topN || 0;
   if (topN > 0) {
     const cand = todas.filter((l) => !l.f.res && !l.f.ocultar);
@@ -529,36 +569,57 @@ function tabela(tela, d, W, spec) {
       const novas = [];
       todas.forEach((l, i) => {
         if (!fora.includes(l)) novas.push(l);
-        if (i === ultimo && spec.agruparOutros !== false && fora.length)
-          novas.push({ r: `Outros (${fora.length})`, ref: fora.reduce((a, x) => a + x.ref, 0), ac: fora.reduce((a, x) => a + x.ac, 0),
+        if (i === ultimo && spec.agruparOutros !== false && fora.length) {
+          const refs = iRefs.map((_, k) => fora.reduce((a, x) => a + x.refs[k], 0));
+          novas.push({ r: `Outros (${fora.length})`, refs, ref: refs[0], ac: fora.reduce((a, x) => a + x.ac, 0), outros: true,
             f: { inv: fora.every((x) => x.f.inv), res: false, neg: false, ocultar: false }, com: "" });
+        }
       });
       todas = novas;
     }
   }
+  todas = ordenarLinhas(todas.filter((l) => !l.f.ocultar), spec.ordem);
 
   // Cascata: subtotais começam do zero; demais linhas somam (custos invertidos subtraem)
   let acum = 0;
   todas.forEach((l) => {
     if (l.f.res) { l.c0 = 0; l.c1 = l.ac; acum = l.ac; }
-    else if (!l.f.ocultar) { const c = l.f.inv ? -l.ac : l.ac; l.c0 = acum; l.c1 = acum + c; acum += c; }
+    else { const c = l.f.inv ? -l.ac : l.ac; l.c0 = acum; l.c1 = acum + c; acum += c; }
   });
-  const linhas = todas.filter((l) => !l.f.ocultar).map((l) => ({ ...l, dv: l.ac - l.ref, pct: l.ref !== 0 ? (l.ac - l.ref) / Math.abs(l.ref) : null }));
+  const linhas = todas.map((l) => ({
+    ...l,
+    dvs: l.refs.map((x) => l.ac - x),
+    pcts: l.refs.map((x) => (x !== 0 ? (l.ac - x) / Math.abs(x) : null)),
+  }));
+  linhas.forEach((l) => { l.dv = l.dvs[0]; l.pct = l.pcts[0]; });
   if (!linhas.length) throw new Error("Todas as linhas estão ocultas.");
-  const cascata = !!spec.cascata;
-  const un = unidadeTabela(spec, linhas.flatMap((l) => [l.ref, l.ac, l.ac - l.ref]));
+  const cascata = !!spec.cascata && vis.ac;
+  const un = unidadeTabela(spec, linhas.flatMap((l) => [...l.refs, l.ac, ...l.dvs]));
   const fmt = (v, sinal) => fmtTab(v, un, sinal);
-  const fav = (l) => (l.f.inv ? l.dv <= 0 : l.dv >= 0);
+  const fav = (l, k = 0) => (l.f.inv ? l.dvs[k] <= 0 : l.dvs[k] >= 0);
 
   // ----- comentários (caixa à direita, fora da largura da tabela)
   const comentarios = spec.comentarios === false ? [] : linhas.filter((l) => l.com);
   const comW = comentarios.length ? 250 : 0;
   comentarios.forEach((l, k) => (l.nCom = k + 1));
 
-  // ----- layout
+  // ----- layout: rótulo | refs (números) | atual | [Δ | Δ%] por referência
   const tam = e.fonte + 1, rowH = Math.round(tam * 2.4);
+  const maxRot = Math.max(...linhas.map((l) => l.r.length));
+  const lw = Math.min(220, Math.max(90, maxRot * tam * 0.56 + 14));
+  const refW = 64, refsW = vis.ref ? nR * refW : 0, mCom = comW ? 18 : 0;
+  const pAc = vis.ac ? (cascata ? 0.42 : 0.38) : 0, pD = vis.abs ? (cascata ? 0.30 : 0.32) : 0, pP = vis.pct ? (cascata ? 0.28 : 0.30) : 0;
+  const pesos = pAc + nR * (pD + pP);
+  // com várias referências a tabela se alarga para cada bloco continuar legível
+  const unid = Math.max((W - lw - refsW - mCom) / pesos, nR > 1 ? 400 : 0);
+  const acW = unid * pAc, dW = unid * pD, pW = unid * pP;
+  const Wt = Math.round(lw + refsW + unid * pesos + mCom);
+  const xRefs = iRefs.map((_, k) => lw + k * refW);
+  const xAc = lw + refsW;
+  const xDs = iRefs.map((_, k) => xAc + acW + k * (dW + pW)), xPs = xDs.map((x) => x + dW);
+
   let titH = 0;
-  const larguraTotal = W + comW;
+  const larguraTotal = Wt + comW;
   tela.fundo(0, 0, larguraTotal, 10);
   const fundo = tela.p[tela.p.length - 1];
   if (spec.titulo) {
@@ -568,94 +629,108 @@ function tabela(tela, d, W, spec) {
   }
   const cabH = 22, y0 = titH + cabH;
   let H = y0 + linhas.length * rowH + 6;
-  const maxRot = Math.max(...linhas.map((l) => l.r.length));
-  const lw = Math.min(220, Math.max(90, maxRot * tam * 0.56 + 14));
-  const refW = 64, resto = W - lw - refW - (comW ? 18 : 0);
-  const acW = resto * (cascata ? 0.42 : 0.38), dW = resto * (cascata ? 0.30 : 0.32), pW = resto - acW - dW;
-  const xRef = lw, xAc = lw + refW, xD = xAc + acW, xP = xD + dW;
   const yLinha = (i) => y0 + i * rowH + rowH / 2;
   const barH = rowH * 0.62;
   const cinzaEixo = "#8C8C8C";
 
-  // ----- escalas
+  // ----- escalas (Δ e Δ% na MESMA escala para todas as referências: dá para comparar)
   const pontosAc = cascata ? linhas.flatMap((l) => [l.c0, l.c1]) : linhas.map((l) => l.ac);
   const acMin = Math.min(0, ...pontosAc), acMax = Math.max(0, ...pontosAc);
   const acI1 = xAc + (acMin < 0 ? 46 : 6), acI2 = xAc + acW - 46;
   const xA = (v) => acI1 + ((v - acMin) / ((acMax - acMin) || 1)) * (acI2 - acI1);
-  const dMax = Math.max(...linhas.map((l) => Math.abs(l.dv))) || 1;
-  const dC = xD + dW / 2, dR = dW / 2 - 44;
-  const pcts = linhas.filter((l) => l.pct !== null).map((l) => Math.abs(l.pct));
+  const dMax = Math.max(...linhas.flatMap((l) => l.dvs.map(Math.abs))) || 1;
+  const dCs = xDs.map((x) => x + dW / 2), dR = dW / 2 - 44;
+  const pcts = linhas.flatMap((l) => l.pcts).filter((p) => p !== null).map(Math.abs);
   let pMax = Math.max(0, ...pcts) || 1;
   if (spec.suprimirPct !== false && pcts.length > 2) {
     const ord = [...pcts].sort((a, b) => a - b), med = ord[Math.floor(ord.length / 2)] || ord[ord.length - 1];
     const normais = ord.filter((x) => x <= Math.max(med * 4, 0.05));
     if (normais.length) pMax = Math.max(...normais) || pMax;
   }
-  const pC = xP + pW / 2, pR = pW / 2 - 40;
+  const pCs = xPs.map((x) => x + pW / 2), pR = pW / 2 - 40;
 
-  // ----- cabeçalhos
+  // ----- cabeçalhos (marca IBCS sob a referência: real = cheio, orçamento = contorno, forecast = hachurado)
   const cab = { size: e.fonte, color: "#595959" };
-  tela.text(refNome, xRef + refW - 6, titH + 4, "top", refW, { ...cab, align: "right" });
-  tela.line(xRef + 14, titH + 18, xRef + refW - 4, titH + 18, "#A6A6A6", 2);
-  tela.text(acNome, xA(0) + 4, titH + 4, "top", 80, { ...cab, align: "left" });
-  tela.text("Δ" + refNome, dC, titH + 4, "top", dW, cab);
-  tela.text("Δ" + refNome + "%", pC, titH + 4, "top", pW, { ...cab, italic: true });
+  iRefs.forEach((_, k) => {
+    const nome = refNomes[k];
+    if (vis.ref) {
+      tela.text(nome, xRefs[k] + refW - 6, titH + 4, "top", refW, { ...cab, align: "right" });
+      const c = cenarioDe(nome), x1 = xRefs[k] + 14, x2 = xRefs[k] + refW - 4;
+      if (c === "real") tela.line(x1, titH + 18, x2, titH + 18, "#A6A6A6", 2);
+      else tela.rect(x1, titH + 16, x2 - x1, titH + 20, "#FFFFFF", { stroke: "#595959", ...(c === "fc" ? { listra: "#8C8C8C" } : {}) });
+    }
+    if (vis.abs) tela.text("Δ" + nome, dCs[k], titH + 4, "top", dW, cab);
+    if (vis.pct) tela.text("Δ" + nome + "%", pCs[k], titH + 4, "top", pW, { ...cab, italic: true });
+  });
+  if (vis.ac) tela.text(acNome, xA(0) + 4, titH + 4, "top", 80, { ...cab, align: "left" });
 
   // ----- linhas
   linhas.forEach((l, i) => {
     const y = yLinha(i), bold = l.f.neg || l.f.res;
-    if (l.f.res && i > 0) tela.line(0, y - rowH / 2, W - (comW ? 18 : 0), y - rowH / 2, "#BFBFBF", 0.75);
+    if (l.f.res && i > 0) tela.line(0, y - rowH / 2, Wt - mCom, y - rowH / 2, "#BFBFBF", 0.75);
     const pref = l.f.inv && !/^\s*[(\-–]/.test(l.r) ? "– " : l.f.res ? "= " : "";
     tela.text(pref + l.r, 0, y, "middle", lw - 8, { size: tam, bold, align: "left" });
-    tela.text(fmt(l.ref), xRef + refW - 6, y, "middle", refW, { size: tam, bold, align: "right", color: "#404040" });
+    if (vis.ref) l.refs.forEach((x, k) =>
+      tela.text(fmt(x), xRefs[k] + refW - 6, y, "middle", refW, { size: tam, bold, align: "right", color: "#404040" }));
     // atual: barra simples ou degrau da cascata
-    const v0 = cascata ? l.c0 : 0, v1 = cascata ? l.c1 : l.ac;
-    const a0 = xA(v0), a1 = xA(v1);
-    tela.rect(Math.min(a0, a1), y - barH / 2, Math.max(0.75, Math.abs(a1 - a0)), y + barH / 2, e.total);
-    if (cascata && i < linhas.length - 1) {
-      const prox = linhas[i + 1];
-      const nivel = prox.f.res ? null : prox.c0;
-      if (nivel !== null) tela.line(xA(nivel), y + barH / 2, xA(nivel), yLinha(i + 1) - barH / 2, "#7F7F7F", 0.75);
-    }
-    // rótulo do lado da ponta da barra; se não couber à esquerda, vai para a direita
-    const larguraRot = fmt(l.ac).length * tam * 0.6 + 6;
-    const cabeEsq = Math.min(a0, a1) - larguraRot >= xA(0) + 2;
-    if (v1 >= v0 || !cabeEsq) tela.text(fmt(l.ac), Math.max(a0, a1) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
-    else tela.text(fmt(l.ac), Math.min(a0, a1) - 4, y, "middle", 60, { size: tam, bold, align: "right" });
-    // Δ absoluta
-    const cor = fav(l) ? e.pos : e.neg;
-    const dx = (l.dv / dMax) * dR;
-    if (l.dv !== 0) tela.rect(Math.min(dC, dC + dx), y - barH / 2, Math.max(0.75, Math.abs(dx)), y + barH / 2, cor);
-    if (l.dv >= 0) tela.text(fmt(l.dv, true), dC + Math.max(dx, 0) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
-    else tela.text(fmt(l.dv, true), dC + dx - 4, y, "middle", 60, { size: tam, bold, align: "right" });
-    // Δ %: alfinete (seta quando passa da escala)
-    if (l.pct === null) tela.text("–", pC + 6, y, "middle", 30, { size: tam, align: "left", color: "#808080" });
-    else {
-      const fora = Math.abs(l.pct) > pMax * 1.0001;
-      const px = Math.sign(l.pct) * Math.min(Math.abs(l.pct) / pMax, 1) * pR;
-      if (fora) tela.arrow(pC, y, pC + px + Math.sign(px) * 6, y, cor, 2);
-      else {
-        if (Math.abs(px) > 0.5) tela.line(pC, y, pC + px, y, cor, 2);
-        tela.dot(pC + px, y, 3, "#262626");
+    if (vis.ac) {
+      const v0 = cascata ? l.c0 : 0, v1 = cascata ? l.c1 : l.ac;
+      const a0 = xA(v0), a1 = xA(v1);
+      tela.rect(Math.min(a0, a1), y - barH / 2, Math.max(0.75, Math.abs(a1 - a0)), y + barH / 2, e.total);
+      if (cascata && i < linhas.length - 1) {
+        const prox = linhas[i + 1];
+        if (!prox.f.res) tela.line(xA(prox.c0), y + barH / 2, xA(prox.c0), yLinha(i + 1) - barH / 2, "#7F7F7F", 0.75);
       }
-      const xt = pC + px + Math.sign(px || 1) * (fora ? 10 : 6);
-      tela.text(fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1), xt, y, "middle", 60, { size: tam, bold, italic: true, align: px < 0 ? "right" : "left" });
+      // rótulo do lado da ponta da barra; se não couber à esquerda, vai para a direita
+      const larguraRot = fmt(l.ac).length * tam * 0.6 + 6;
+      const cabeEsq = Math.min(a0, a1) - larguraRot >= xA(0) + 2;
+      if (v1 >= v0 || !cabeEsq) tela.text(fmt(l.ac), Math.max(a0, a1) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
+      else tela.text(fmt(l.ac), Math.min(a0, a1) - 4, y, "middle", 60, { size: tam, bold, align: "right" });
     }
+    l.dvs.forEach((dv, k) => {
+      const cor = fav(l, k) ? e.pos : e.neg;
+      // Δ absoluta
+      if (vis.abs) {
+        const dC = dCs[k], dx = (dv / dMax) * dR;
+        if (dv !== 0) tela.rect(Math.min(dC, dC + dx), y - barH / 2, Math.max(0.75, Math.abs(dx)), y + barH / 2, cor);
+        if (dv >= 0) tela.text(fmt(dv, true), dC + Math.max(dx, 0) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
+        else tela.text(fmt(dv, true), dC + dx - 4, y, "middle", 60, { size: tam, bold, align: "right" });
+      }
+      // Δ %: alfinete (seta quando passa da escala)
+      if (vis.pct) {
+        const pC = pCs[k], pct = l.pcts[k];
+        if (pct === null) tela.text("–", pC + 6, y, "middle", 30, { size: tam, align: "left", color: "#808080" });
+        else {
+          const fora = Math.abs(pct) > pMax * 1.0001;
+          const px = Math.sign(pct) * Math.min(Math.abs(pct) / pMax, 1) * pR;
+          if (fora) tela.arrow(pC, y, pC + px + Math.sign(px) * 6, y, cor, 2);
+          else {
+            if (Math.abs(px) > 0.5) tela.line(pC, y, pC + px, y, cor, 2);
+            tela.dot(pC + px, y, 3, "#262626");
+          }
+          const xt = pC + px + Math.sign(px || 1) * (fora ? 10 : 6);
+          tela.text(fmtPct(pct, Math.abs(pct) >= 1 ? 0 : 1), xt, y, "middle", 60, { size: tam, bold, italic: true, align: px < 0 ? "right" : "left" });
+        }
+      }
+    });
     // marcador do comentário
-    if (l.nCom) tela.marcador(W - (comW ? 18 : 0) + 6, y, 7, l.nCom, "#1A53FF");
+    if (l.nCom) tela.marcador(Wt - mCom + 6, y, 7, l.nCom, "#1A53FF");
   });
 
-  // ----- eixos verticais
+  // ----- eixos verticais e separadores entre as referências
   const yA = y0 - 2, yB = y0 + linhas.length * rowH + 2;
-  tela.line(xA(0), yA, xA(0), yB, cinzaEixo, 1.5);
-  tela.line(dC, yA, dC, yB, cinzaEixo, 1.5);
-  tela.line(pC, yA, pC, yB, cinzaEixo, 1.5);
+  if (vis.ac) tela.line(xA(0), yA, xA(0), yB, cinzaEixo, 1.5);
+  iRefs.forEach((_, k) => {
+    if (vis.abs) tela.line(dCs[k], yA, dCs[k], yB, cinzaEixo, 1.5);
+    if (vis.pct) tela.line(pCs[k], yA, pCs[k], yB, cinzaEixo, 1.5);
+    if (nR > 1 && (k > 0 || vis.ac)) tela.line(xDs[k] - 2, titH + 2, xDs[k] - 2, yB, "#E0E0E0", 0.75);
+  });
 
-  // ----- caixa de comentários
+  // ----- caixa de comentários (variação contra a 1ª referência)
   if (comW) {
-    const xC = W + 6, wC = comW - 6, tc = e.fonte;
+    const xC = Wt + 6, wC = comW - 6, tc = e.fonte;
     let cursor = y0 - 4;
-    tela.line(W - 2, y0 - 6, W - 2, yB, "#E0E0E0", 0.75);
+    tela.line(Wt - 2, y0 - 6, Wt - 2, yB, "#E0E0E0", 0.75);
     comentarios.forEach((l) => {
       const y = Math.max(cursor, yLinha(linhas.indexOf(l)) - rowH / 2);
       tela.marcador(xC + 8, y + 8, 7, l.nCom, "#1A53FF");
@@ -663,7 +738,8 @@ function tabela(tela, d, W, spec) {
       const modo = spec.comModo ?? "B";
       const pctTxt = l.pct === null ? "" : fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1);
       const absTxt = fmt(l.dv, true);
-      const varTxt = modo === "P" ? (pctTxt || absTxt) : modo === "A" ? absTxt : [pctTxt, absTxt].filter(Boolean).join(" | ");
+      let varTxt = modo === "P" ? (pctTxt || absTxt) : modo === "A" ? absTxt : [pctTxt, absTxt].filter(Boolean).join(" | ");
+      if (nR > 1) varTxt += " vs " + refNomes[0];
       const cab1 = `${l.r} ${fmt(l.ac)}`;
       tela.text(cab1, xC + 20, y + 8, "middle", wC - 20, { size: tc, bold: true, align: "left" });
       const xSeta = xC + 20 + cab1.length * tc * 0.6 + 4;

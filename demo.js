@@ -38,6 +38,15 @@ export const DEMOS = [
     ["Cliente", "BGT", "Real"], ["Cliente A", 3200, 3550], ["Cliente B", 2800, 2610], ["Cliente C", 2100, 2390],
     ["Cliente D", 1500, 1480], ["Cliente E", 1300, 1020], ["Cliente F", 900, 940], ["Cliente G", 800, 805],
     ["Cliente H", 600, 720], ["Cliente I", 500, 470], ["Cliente J", 400, 395], ["Total", 14100, 14380]] },
+  { tipo: "TAB", titulo: "DRE – Real x Orçamento x Forecast 9+3, R$ mil", estilo: "cinza", valores: [
+    ["Conta", "BGT", "FC 9+3", "Real", "Comentário"],
+    ["Receita bruta", 12500, 12900, 13100, "Linha nova acima do FC; o BGT não previa o lançamento."],
+    ["Deduções", 2100, 2200, 2250, ""], ["Receita líquida", 10400, 10700, 10850, ""],
+    ["CPV", 6200, 6550, 6650, "Insumo X: o FC já capturava a alta; o desvio residual é o frete."],
+    ["Lucro bruto", 4200, 4150, 4200, ""],
+    ["Despesas comerciais", 1100, 1050, 1020, ""], ["Despesas administrativas", 900, 940, 960, ""], ["EBITDA", 2200, 2160, 2220, ""],
+    ["D&A", 400, 405, 410, ""], ["Resultado financeiro", -300, -350, -380, ""],
+    ["IR/CS", 510, 470, 480, ""], ["Lucro líquido", 990, 935, 950, ""]] },
 ];
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
@@ -63,4 +72,7 @@ export const EXEMPLOS = [
   { demo: 8, estilo: "cinza", descricao: "9. Tabela de variações – DRE Real x BGT: custos invertidos (queda = verde), subtotais e comentários numerados" },
   { demo: 8, estilo: "cinza", cascata: true, comentarios: false, descricao: "10. Tabela com cascata – a coluna Real vira uma ponte que zera nos subtotais" },
   { demo: 9, estilo: "orc-fc", topN: 5, descricao: "11. Top N – só os 5 clientes com maior desvio; o resto agrupado em Outros" },
+  { demo: 10, estilo: "cinza", descricao: "12. Várias referências – Real x BGT e Real x FC 9+3 lado a lado, na mesma escala" },
+  { demo: 9, estilo: "orc-fc", ordem: "fav", titulo: "Receita por cliente – do mais favorável ao mais desfavorável, R$ mil", colunas: { ref: false, ac: true, abs: true, pct: true },
+    descricao: "13. Ordenada – clientes do mais favorável ao mais desfavorável, sem a coluna de referência" },
 ];

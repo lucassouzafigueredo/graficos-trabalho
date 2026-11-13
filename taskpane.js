@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha } from "./engine.js?v=1.3.0";
-import { renderSVG } from "./render-svg.js?v=1.3.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.3.0";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.4.0";
+import { renderSVG } from "./render-svg.js?v=1.4.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.4.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.3.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.3.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.3.0";
+} from "./styles.js?v=1.4.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.4.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.4.0";
 
-const VERSAO = "1.3.0";
+const VERSAO = "1.4.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -159,8 +159,9 @@ const FLAGS = ["inv", "res", "neg", "ocultar"];
 function desenharLinhasTabela() {
   const box = $("linhasTabela");
   if (!st.dados || st.spec.tipo !== "TAB") { box.innerHTML = ""; return; }
+  const { iAc, iRefs } = colunasTabela(st.spec, st.dados);
   box.innerHTML = st.dados.rot.map((r, i) => {
-    const f = flagsLinha(st.spec, r, st.dados.v[i][0] ?? 0, st.dados.v[i][1] ?? 0);
+    const f = flagsLinha(st.spec, r, st.dados.v[i][iRefs[0]] ?? 0, st.dados.v[i][iAc] ?? 0);
     const cls = (f.ocultar ? " oculta" : "") + (f.res ? " res" : "");
     return `<div class="linha-tab${cls}" data-rot="${escHtml(r)}" data-i="${i}"><span class="rot" title="${escHtml(r)}">${escHtml(r)}</span>` +
       FLAGS.map((k) => `<input type="checkbox" data-k="${k}"${f[k] ? " checked" : ""}>`).join("") + `</div>`;
@@ -169,11 +170,12 @@ function desenharLinhasTabela() {
 function lerLinhasTabela() {
   if (st.spec.tipo !== "TAB") return;
   const out = { ...(st.spec.linhas ?? {}) };
+  const { iAc, iRefs } = st.dados ? colunasTabela(st.spec, st.dados) : { iAc: 1, iRefs: [0] };
   document.querySelectorAll("#linhasTabela .linha-tab").forEach((el) => {
     const marc = {};
     el.querySelectorAll("input").forEach((c) => (marc[c.dataset.k] = c.checked));
     const i = +el.dataset.i, rot = el.dataset.rot;
-    const auto = flagsLinha({}, rot, st.dados.v[i][0] ?? 0, st.dados.v[i][1] ?? 0);
+    const auto = flagsLinha({}, rot, st.dados.v[i][iRefs[0]] ?? 0, st.dados.v[i][iAc] ?? 0);
     const dif = {};
     FLAGS.forEach((k) => { if (marc[k] !== auto[k]) dif[k] = marc[k]; });
     if (Object.keys(dif).length) out[rot] = dif; else delete out[rot];
@@ -182,6 +184,37 @@ function lerLinhasTabela() {
   });
   st.spec.linhas = out;
 }
+// Coluna atual (select) e referências (checkboxes) a partir dos cabeçalhos numéricos
+function desenharColunasTabela() {
+  const sel = $("tabAtual"), box = $("tabRefs");
+  if (!st.dados || st.spec.tipo !== "TAB") { sel.innerHTML = ""; box.innerHTML = ""; return; }
+  const cab = st.dados.cab, { iAc, iRefs } = colunasTabela(st.spec, st.dados);
+  const auto = colunasTabela({}, st.dados).iAc;
+  sel.innerHTML = `<option value="">Automático (${escHtml(cab[auto] ?? "")})</option>` +
+    cab.map((c, i) => `<option value="${i}">${escHtml(c || `Coluna ${i + 1}`)}</option>`).join("");
+  sel.value = Number.isInteger(st.spec.colAtual) ? String(st.spec.colAtual) : "";
+  box.innerHTML = cab.map((c, i) => i === iAc ? "" :
+    `<label class="check"><input type="checkbox" data-i="${i}"${iRefs.includes(i) ? " checked" : ""}> ${escHtml(c || `Coluna ${i + 1}`)}</label>`).join("");
+  const v = st.spec.colunas ?? {};
+  $("tabVisRef").checked = v.ref !== false; $("tabVisAc").checked = v.ac !== false;
+  $("tabVisAbs").checked = v.abs !== false; $("tabVisPct").checked = v.pct !== false;
+  $("tabOrdem").value = st.spec.ordem ?? "planilha";
+}
+function lerColunasTabela() {
+  if (st.spec.tipo !== "TAB" || !st.dados) return;
+  const s = st.spec;
+  const a = $("tabAtual").value;
+  const novoAc = a === "" ? undefined : +a;
+  const mudouAtual = novoAc !== s.colAtual;
+  s.colAtual = novoAc;
+  const marc = [...document.querySelectorAll("#tabRefs input:checked")].map((c) => +c.dataset.i);
+  s.refs = mudouAtual ? undefined : (marc.length ? marc : undefined);
+  if (!mudouAtual && !marc.length) desenharColunasTabela(); // nenhuma marcada = volta ao automático
+  s.colunas = { ref: $("tabVisRef").checked, ac: $("tabVisAc").checked, abs: $("tabVisAbs").checked, pct: $("tabVisPct").checked };
+  s.ordem = $("tabOrdem").value;
+  if (mudouAtual) desenharColunasTabela();
+}
+
 function mostrarSecoesDoTipo() {
   const tab = st.spec.tipo === "TAB";
   $("secTabela").hidden = !tab;
@@ -212,6 +245,7 @@ function escreverForm() {
   $("tabComModo").value = s.comModo ?? "B";
   $("tabTopN").value = s.topN ?? 0;
   $("tabOutros").checked = s.agruparOutros !== false;
+  desenharColunasTabela();
   desenharLinhasTabela();
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
@@ -250,6 +284,7 @@ function lerForm() {
     el.classList.toggle("desligada", !a.on);
   });
   lerCoresBarras();
+  lerColunasTabela();
   lerLinhasTabela();
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
@@ -517,11 +552,12 @@ async function gerarExemplos() {
       const dados = lerDados(r.values, r.text, TIPOS[demo.tipo].comTipo);
       const estilo = estiloPorId(ex.estilo);
       const spec = {
-        tipo: demo.tipo, titulo: demo.titulo, corte: ex.corte ?? demo.corte ?? 0,
+        tipo: demo.tipo, titulo: ex.titulo ?? demo.titulo, corte: ex.corte ?? demo.corte ?? 0,
         W: TIPOS[demo.tipo].W, H: TIPOS[demo.tipo].H,
         anot: ex.anot ? clone(ex.anot) : anotacoesPadrao(demo.tipo), barras: ex.barras ?? {},
         modo: modoPadrao(),
         cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
+        ordem: ex.ordem ?? "planilha", colunas: ex.colunas,
       };
       const g = montarGrafico(dados, spec, estilo);
       await desenharNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
@@ -580,7 +616,7 @@ function carregarDemo(i) {
   const d = DEMOS[i];
   st.valores = d.valores; st.textos = textosDemo(d.valores);
   st.fonte = null;
-  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0 };
+  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0, ordem: d.ordem ?? "planilha" };
   if (d.semCagr) st.spec.anot.cagr.on = false;
   if (d.estilo) $("estilo").value = d.estilo;
   processarValores();
@@ -651,7 +687,9 @@ function ligarEventos() {
   $("cagrPara").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
 
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => r.addEventListener("change", () => { lembrarModo(r.value); reagir(); }));
-  ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros"].forEach((id) => $(id).addEventListener("change", reagir));
+  ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros",
+    "tabAtual", "tabOrdem", "tabVisRef", "tabVisAc", "tabVisAbs", "tabVisPct"].forEach((id) => $(id).addEventListener("change", reagir));
+  $("tabRefs").addEventListener("change", reagir);
   $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };
