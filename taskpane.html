@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gráficos FP&amp;A</title>
+<link rel="stylesheet" href="taskpane.css">
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+<header>
+  <h1>Gráficos FP&amp;A</h1>
+  <span id="versao" class="muted"></span>
+</header>
+
+<div id="avisoDemo" class="aviso" hidden>
+  Modo demonstração (fora do Excel). Escolha um exemplo:
+  <select id="demoSel"></select>
+</div>
+
+<!-- GRÁFICOS EXISTENTES -->
+<section>
+  <h2>Gráficos nesta planilha</h2>
+  <div class="linha">
+    <select id="listaGraficos"><option value="">— novo gráfico —</option></select>
+    <button id="btnRecarregarLista" class="icone" title="Recarregar lista">⟳</button>
+  </div>
+  <div class="linha">
+    <button id="btnAtualizarTodos" class="sec">Atualizar todos com os dados atuais</button>
+  </div>
+</section>
+
+<!-- DADOS -->
+<section>
+  <h2>Dados</h2>
+  <div class="linha">
+    <input id="endereco" readonly placeholder="selecione os dados na planilha">
+    <button id="btnSelecao">Usar seleção</button>
+  </div>
+  <p id="resumoDados" class="muted"></p>
+  <label class="check"><input type="checkbox" id="autoLinhas" checked> Ajustar às linhas da tabela (inclui/exclui linhas até a 1ª linha vazia)</label>
+  <label class="check"><input type="checkbox" id="autoAtualizar" checked> Atualizar gráficos automaticamente quando os números mudarem</label>
+</section>
+
+<!-- PRÉ-VISUALIZAÇÃO -->
+<section>
+  <h2>Pré-visualização</h2>
+  <div id="preview" class="preview"><p class="muted">Selecione os dados e clique em “Usar seleção”.</p></div>
+</section>
+
+<!-- GRÁFICO -->
+<section>
+  <h2>Gráfico</h2>
+  <label>Tipo
+    <select id="tipo">
+      <option value="IBCS">Cascata IBCS (FC → AC)</option>
+      <option value="IBCSM">Cascata IBCS – múltiplos</option>
+      <option value="EMP">Cascata empilhada</option>
+      <option value="COL">Colunas</option>
+      <option value="COMP">Comparação</option>
+    </select>
+  </label>
+  <label>Título <input id="titulo" placeholder="opcional"></label>
+  <label id="lblCorte">Corte do eixo (valor absoluto)
+    <input id="corte" type="number" placeholder="vazio = sem corte">
+  </label>
+  <div class="duas">
+    <label>Largura <input id="largura" type="number" min="150" step="10"></label>
+    <label>Altura <input id="altura" type="number" min="100" step="10"></label>
+  </div>
+</section>
+
+<!-- ESTILO -->
+<section>
+  <h2>Estilo</h2>
+  <div class="linha">
+    <select id="estilo"></select>
+    <button id="btnEditarEstilo" class="sec">Editar / novo</button>
+  </div>
+  <div id="editorEstilo" class="editor" hidden>
+    <label>Nome do estilo <input id="estNome"></label>
+    <div class="cores">
+      <label><input type="color" id="estTotal"> Totais / Real</label>
+      <label><input type="color" id="estDelta"> Variação neutra</label>
+      <label><input type="color" id="estPos"> Variação favorável</label>
+      <label><input type="color" id="estNeg"> Variação desfavorável</label>
+    </div>
+    <label class="check"><input type="checkbox" id="estPorSinal"> Colorir variações pelo sinal (verde/vermelho)</label>
+    <p class="sub">Pilhas (base → topo)</p>
+    <div class="cores seis" id="estPilha"></div>
+    <p class="sub">Colunas / comparação</p>
+    <div class="cores quatro" id="estColunas"></div>
+    <div class="linha botoes">
+      <button id="btnSalvarEstilo">Salvar estilo</button>
+      <button id="btnExcluirEstilo" class="sec">Excluir</button>
+      <button id="btnFecharEditor" class="sec">Fechar</button>
+    </div>
+    <div class="linha botoes">
+      <button id="btnExportar" class="sec">Exportar estilos (.json)</button>
+      <label class="botao sec">Importar…<input type="file" id="arqImportar" accept=".json" hidden></label>
+    </div>
+    <p class="muted">Dica: exporte para uma pasta do OneDrive/SharePoint e peça para o time importar. Assim todos usam as mesmas cores.</p>
+  </div>
+</section>
+
+<!-- ANOTAÇÕES -->
+<section>
+  <h2>Variações e CAGR</h2>
+  <div class="anot" data-k="0">
+    <label class="check titulo"><input type="checkbox" class="on"> Variação 1</label>
+    <div class="corpo">
+      <div class="duas">
+        <label>De <select class="de"></select></label>
+        <label>Para <select class="para"></select></label>
+      </div>
+      <div class="segmentado">
+        <label><input type="radio" name="modo0" value="P"> %</label>
+        <label><input type="radio" name="modo0" value="A"> Valor</label>
+        <label><input type="radio" name="modo0" value="B"> Ambos</label>
+      </div>
+      <label class="check"><input type="checkbox" class="balao"> Balão (callout)</label>
+    </div>
+  </div>
+  <div class="anot" data-k="1">
+    <label class="check titulo"><input type="checkbox" class="on"> Variação 2</label>
+    <div class="corpo">
+      <div class="duas">
+        <label>De <select class="de"></select></label>
+        <label>Para <select class="para"></select></label>
+      </div>
+      <div class="segmentado">
+        <label><input type="radio" name="modo1" value="P"> %</label>
+        <label><input type="radio" name="modo1" value="A"> Valor</label>
+        <label><input type="radio" name="modo1" value="B"> Ambos</label>
+      </div>
+      <label class="check"><input type="checkbox" class="balao"> Balão (callout)</label>
+    </div>
+  </div>
+  <div class="anot" id="anotCagr">
+    <label class="check titulo"><input type="checkbox" id="cagrOn"> Linha de CAGR</label>
+    <div class="corpo duas">
+      <label>De <select id="cagrDe"></select></label>
+      <label>Para <select id="cagrPara"></select></label>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div id="msg" class="msg" hidden></div>
+  <button id="btnInserir" class="primario">Inserir gráfico</button>
+  <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
+</footer>
+
+<script type="module" src="taskpane.js"></script>
+</body>
+</html>

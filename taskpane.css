@@ -1,0 +1,59 @@
+[hidden] { display: none !important; }
+:root {
+  --fundo: #ffffff; --texto: #242424; --muted: #6b6b6b; --borda: #d1d1d1;
+  --primaria: #1a53ff; --primaria-h: #1442cc; --suave: #f5f7fb; --erro: #c50f1f; --ok: #0e7a0d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px;
+  color: var(--texto); background: var(--fundo); padding-bottom: 110px;
+}
+header { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 14px 4px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+section { padding: 10px 14px; border-top: 1px solid #eee; }
+label { display: block; margin: 6px 0; font-size: 12px; color: var(--muted); }
+label > input:not([type=checkbox]):not([type=radio]):not([type=color]), label > select { display: block; width: 100%; margin-top: 3px; }
+input, select, button { font: inherit; color: var(--texto); }
+input, select { border: 1px solid var(--borda); border-radius: 4px; padding: 5px 7px; background: #fff; min-width: 0; }
+input:focus, select:focus { outline: 2px solid var(--primaria); outline-offset: -1px; }
+.linha { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.linha > input, .linha > select { flex: 1; }
+.duas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.duas label { margin: 4px 0; }
+button, .botao {
+  border: 1px solid var(--borda); background: #fff; border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  white-space: nowrap; display: inline-block; margin: 0; font-size: 12px; color: var(--texto);
+}
+button:hover, .botao:hover { background: var(--suave); }
+button.primario { background: var(--primaria); color: #fff; border-color: var(--primaria); width: 100%; padding: 9px; font-weight: 600; font-size: 13px; }
+button.primario:hover { background: var(--primaria-h); }
+button.icone { width: 30px; padding: 5px 0; }
+button:disabled { opacity: .5; cursor: default; }
+.muted { color: var(--muted); font-size: 11.5px; margin: 4px 0; }
+.sub { margin: 10px 0 4px; font-size: 11.5px; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 6px; color: var(--texto); }
+.anot { border: 1px solid #e6e6e6; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+.anot .titulo { font-weight: 600; margin: 2px 0; }
+.anot.desligada .corpo { opacity: .45; }
+.segmentado { display: flex; border: 1px solid var(--borda); border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.segmentado label { flex: 1; margin: 0; text-align: center; padding: 4px 0; cursor: pointer; color: var(--texto); border-right: 1px solid var(--borda); }
+.segmentado label:last-child { border-right: 0; }
+.segmentado input { display: none; }
+.segmentado label:has(input:checked) { background: var(--primaria); color: #fff; }
+.editor { background: var(--suave); border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+.cores { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.cores label { display: flex; align-items: center; gap: 6px; margin: 3px 0; color: var(--texto); }
+.cores.seis, .cores.quatro { grid-template-columns: repeat(6, 1fr); }
+.cores.quatro { grid-template-columns: repeat(4, 1fr); }
+input[type=color] { width: 30px; height: 24px; padding: 0 1px; border: 1px solid var(--borda); border-radius: 3px; cursor: pointer; flex: none; }
+.cores.seis input[type=color], .cores.quatro input[type=color] { width: 100%; }
+.botoes { flex-wrap: wrap; }
+.preview { position: sticky; top: 0; z-index: 2; background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 6px; min-height: 80px; overflow: hidden; }
+.preview svg { width: 100%; height: auto; display: block; }
+.aviso { margin: 6px 14px; padding: 8px 10px; background: #fff4ce; border-radius: 6px; font-size: 12px; }
+.aviso select { width: 100%; margin-top: 4px; }
+footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e6e6e6; padding: 10px 14px; display: grid; gap: 6px; }
+.msg { font-size: 12px; padding: 6px 8px; border-radius: 4px; background: #eef4ff; }
+.msg.erro { background: #fde7e9; color: var(--erro); }
+.msg.ok { background: #e7f6e7; color: var(--ok); }
