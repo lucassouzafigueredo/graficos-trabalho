@@ -11,8 +11,8 @@
 // Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
 // é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.2.0";
-import { renderSVG } from "./render-svg.js?v=1.2.0";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.3.0";
+import { renderSVG } from "./render-svg.js?v=1.3.0";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const SETAS = ["Triangle", "Stealth", "Open"];
@@ -231,6 +231,15 @@ async function inserirComFormas(context, sheet, grafico, L, T, meta, usarMemoria
           peso(s, 1.25);
           s.textFrame.textRange.text = p.text;
           prepararTexto(s, { ...p, color: "#000000", bold: true, align: "center", valign: "middle" }, fonte);
+          break;
+        case "marcador":
+          s = shapes.addGeometricShape("Ellipse");
+          pos(s, p.cx - p.r, p.cy - p.r, 2 * p.r, 2 * p.r);
+          s.fill.setSolidColor("#FFFFFF");
+          s.lineFormat.color = p.color;
+          peso(s, 1);
+          s.textFrame.textRange.text = p.n;
+          prepararTexto(s, { size: p.size, color: p.color, align: "center", valign: "middle" }, fonte);
           break;
         case "dot":
           s = shapes.addGeometricShape("Ellipse");

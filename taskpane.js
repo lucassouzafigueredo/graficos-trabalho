@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha } from "./engine.js?v=1.2.0";
-import { renderSVG } from "./render-svg.js?v=1.2.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.2.0";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha } from "./engine.js?v=1.3.0";
+import { renderSVG } from "./render-svg.js?v=1.3.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.3.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.2.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.2.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.2.0";
+} from "./styles.js?v=1.3.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.3.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.3.0";
 
-const VERSAO = "1.2.0";
+const VERSAO = "1.3.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -207,6 +207,11 @@ function escreverForm() {
   $("tabUnidade").value = s.unidade ?? "auto";
   $("tabCasas").value = s.casas ?? "";
   $("tabSuprimir").checked = s.suprimirPct !== false;
+  $("tabCascata").checked = !!s.cascata;
+  $("tabComent").checked = s.comentarios !== false;
+  $("tabComModo").value = s.comModo ?? "B";
+  $("tabTopN").value = s.topN ?? 0;
+  $("tabOutros").checked = s.agruparOutros !== false;
   desenharLinhasTabela();
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
@@ -249,6 +254,11 @@ function lerForm() {
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
   s.suprimirPct = $("tabSuprimir").checked;
+  s.cascata = $("tabCascata").checked;
+  s.comentarios = $("tabComent").checked;
+  s.comModo = $("tabComModo").value;
+  s.topN = Math.max(0, Math.floor(+$("tabTopN").value || 0));
+  s.agruparOutros = $("tabOutros").checked;
   s.anot.cagr = { on: $("cagrOn").checked, de: +$("cagrDe").value || 1, para: +$("cagrPara").value || 0 };
   $("anotCagr").classList.toggle("desligada", !s.anot.cagr.on);
   if (st.fonte) st.fonte.autoLinhas = $("autoLinhas").checked;
@@ -511,6 +521,7 @@ async function gerarExemplos() {
         W: TIPOS[demo.tipo].W, H: TIPOS[demo.tipo].H,
         anot: ex.anot ? clone(ex.anot) : anotacoesPadrao(demo.tipo), barras: ex.barras ?? {},
         modo: modoPadrao(),
+        cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
       };
       const g = montarGrafico(dados, spec, estilo);
       await desenharNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
@@ -569,7 +580,7 @@ function carregarDemo(i) {
   const d = DEMOS[i];
   st.valores = d.valores; st.textos = textosDemo(d.valores);
   st.fonte = null;
-  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo) };
+  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0 };
   if (d.semCagr) st.spec.anot.cagr.on = false;
   if (d.estilo) $("estilo").value = d.estilo;
   processarValores();
@@ -640,7 +651,8 @@ function ligarEventos() {
   $("cagrPara").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
 
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => r.addEventListener("change", () => { lembrarModo(r.value); reagir(); }));
-  ["tabUnidade", "tabCasas", "tabSuprimir"].forEach((id) => $(id).addEventListener("change", reagir));
+  ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros"].forEach((id) => $(id).addEventListener("change", reagir));
+  $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };
   $("coresBarras").addEventListener("input", reagir);

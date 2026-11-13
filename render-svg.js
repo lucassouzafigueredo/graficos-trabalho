@@ -1,10 +1,10 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
-import { poligonosListras } from "./listras.js?v=1.2.0";
+import { poligonosListras } from "./listras.js?v=1.3.0";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
 let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página
 
-function quebrarLinhas(texto, largura, size) {
+function quebrarLinhas(texto, largura, size, maxLinhas = 3) {
   const max = Math.max(1, Math.floor(largura / (size * 0.55)));
   const palavras = texto.split(/\s+/);
   const linhas = [];
@@ -15,11 +15,12 @@ function quebrarLinhas(texto, largura, size) {
     else { linhas.push(atual); atual = p; }
   }
   if (atual) linhas.push(atual);
-  return linhas.slice(0, 3);
+  if (linhas.length > maxLinhas) { linhas.length = maxLinhas; linhas[maxLinhas - 1] = linhas[maxLinhas - 1].replace(/\s*\S*$/, "") + "…"; }
+  return linhas;
 }
 
 function textoSVG(p, fonte) {
-  const linhas = p.wrap ? quebrarLinhas(p.text, p.w, p.size) : p.text.split("\n");
+  const linhas = p.wrap ? quebrarLinhas(p.text, p.w, p.size, p.maxLinhas ?? 3) : p.text.split("\n");
   const lh = p.size * 1.25;
   const anchor = p.align === "left" ? "start" : p.align === "right" ? "end" : "middle";
   const x = p.align === "left" ? p.x : p.align === "right" ? p.x + p.w : p.x + p.w / 2;
@@ -68,6 +69,9 @@ export function renderSVG(grafico, opts = {}) {
       case "ellipse":
         return `<ellipse cx="${(p.x + p.w / 2).toFixed(1)}" cy="${(p.y + p.h / 2).toFixed(1)}" rx="${(p.w / 2).toFixed(1)}" ry="${(p.h / 2).toFixed(1)}" fill="#fff" stroke="#000" stroke-width="1.25"/>` +
           textoSVG({ ...p, color: "#000", bold: true, align: "center", valign: "middle", wrap: false }, fonte);
+      case "marcador":
+        return `<circle cx="${p.cx.toFixed(1)}" cy="${p.cy.toFixed(1)}" r="${p.r}" fill="#fff" stroke="${p.color}" stroke-width="1.1"/>` +
+          `<text x="${p.cx.toFixed(1)}" y="${(p.cy + p.size * 0.36).toFixed(1)}" font-family="${fonte}" font-size="${p.size}" fill="${p.color}" text-anchor="middle">${esc(p.n)}</text>`;
       case "dot":
         return `<circle cx="${p.cx.toFixed(1)}" cy="${p.cy.toFixed(1)}" r="${p.r}" fill="${p.color}"/>`;
       default:

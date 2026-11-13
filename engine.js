@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.2.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.3.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -41,7 +41,7 @@ export function lerDados(values, texts, comTipo) {
   const isNum = (x) => typeof x === "number" && isFinite(x);
   const temCab = values[0].slice(c0).some((x) => x !== "" && x !== null && !isNum(x));
   const r0 = temCab ? 1 : 0;
-  let rot = [], tipo = [], v = [];
+  let rot = [], tipo = [], v = [], txt = [];
   let cab = values[0].slice(c0).map((x, i) => (temCab ? String(texts[0][c0 + i]) : `Série ${i + 1}`));
   for (let r = r0; r < values.length; r++) {
     const linhaVazia = values[r].every((x) => x === "" || x === null);
@@ -49,14 +49,18 @@ export function lerDados(values, texts, comTipo) {
     rot.push(String(texts[r][0] ?? ""));
     tipo.push(comTipo ? String(values[r][1] ?? "").trim().toUpperCase() : "");
     v.push(values[r].slice(c0).map((x) => (isNum(x) ? x : null)));
+    txt.push(texts[r].slice(c0).map((x) => String(x ?? "").trim()));
   }
   if (!rot.length) throw new Error("Não há linhas de dados.");
   // descarta colunas sem nenhum número (ex.: "Tipo" ou colunas de espaçamento)
   const manter = cab.map((_, c) => v.some((linha) => linha[c] !== null));
   if (!manter.some(Boolean)) throw new Error("Não encontrei valores numéricos no intervalo.");
+  // colunas só de texto (ex.: "Comentário") ficam guardadas à parte
+  const cabTextos = cab.filter((_, c) => !manter[c]);
+  const textos = txt.map((linha) => linha.filter((_, c) => !manter[c]));
   cab = cab.filter((_, c) => manter[c]);
   v = v.map((linha) => linha.filter((_, c) => manter[c]));
-  return { rot, cab, v, tipo, nLin: rot.length, nCol: cab.length };
+  return { rot, cab, v, tipo, nLin: rot.length, nCol: cab.length, cabTextos, textos };
 }
 
 // -----------------------------------------------------------------------------
@@ -84,15 +88,16 @@ class Tela {
   // ancora: "top" | "middle" | "bottom";  alinh: "left" | "center" | "right"
   text(text, x, y, ancora, w, opts = {}) {
     const size = opts.size ?? this.e.fonte;
-    const linhas = opts.wrap ? 3 : String(text).split("\n").length;
-    const h = opts.wrap ? size * 1.35 * 3 : size * (0.2 + 1.4 * linhas);
+    const maxL = opts.maxLinhas ?? 3;
+    const linhas = opts.wrap ? maxL : String(text).split("\n").length;
+    const h = opts.wrap ? size * 1.35 * maxL : size * (0.2 + 1.4 * linhas);
     const top = ancora === "top" ? y : ancora === "middle" ? y - h / 2 : y - h;
     const alinh = opts.align ?? "center";
     const left = alinh === "left" ? x : alinh === "right" ? x - w : x - w / 2;
     this.p.push({
       t: "text", x: left, y: top, w: Math.max(10, w), h, text: String(text), size,
       color: opts.color ?? this.e.texto, bold: !!opts.bold, italic: !!opts.italic,
-      align: alinh, valign: ancora, wrap: !!opts.wrap,
+      align: alinh, valign: ancora, wrap: !!opts.wrap, maxLinhas: maxL,
     });
   }
   ellipse(text, x, cy, ladoEsquerdo) {
@@ -104,6 +109,7 @@ class Tela {
     this.p.push({ t: "ellipse", x: left, y: cy - h / 2, w, h, text, size });
   }
   dot(cx, cy, r, color) { this.p.push({ t: "dot", cx, cy, r, color }); }
+  marcador(cx, cy, r, n, color) { this.p.push({ t: "marcador", cx, cy, r, n: String(n), color, size: Math.round(r * 1.1) }); }
   arrow(x1, y1, x2, y2, color, w) { this.line(x1, y1, x2, y2, color, w, { arrow: true }); }
   quebra(bx, bw, yb) {
     const k = 5;
@@ -213,9 +219,11 @@ export function montarGrafico(dados, spec, estilo) {
     case "COMP":
       comparacao(tela, dados, W, H, spec.titulo, anot);
       break;
-    case "TAB":
-      altura = tabela(tela, dados, W, spec);
+    case "TAB": {
+      const r = tabela(tela, dados, W, spec);
+      altura = r.altura; largura = r.largura;
       break;
+    }
     default:
       throw new Error("Tipo de gráfico desconhecido: " + spec.tipo);
   }
@@ -503,38 +511,75 @@ function tabela(tela, d, W, spec) {
   const e = tela.e;
   if (d.nCol < 2) throw new Error("A tabela precisa de duas colunas numéricas: Referência (ex.: BGT) e Atual (ex.: Real).");
   const refNome = d.cab[0] || "Ref", acNome = d.cab[1] || "AC";
-  const linhas = d.rot.map((r, i) => {
+  const iCom = (d.cabTextos ?? []).findIndex((c) => /coment|obs|nota|explic|justif/i.test(c));
+  const colCom = iCom >= 0 ? iCom : (d.cabTextos?.length ? 0 : -1);
+  let todas = d.rot.map((r, i) => {
     const ref = num(d.v[i][0]), ac = num(d.v[i][1]);
-    return { r, ref, ac, dv: ac - ref, pct: ref !== 0 ? (ac - ref) / Math.abs(ref) : null, f: flagsLinha(spec, r, ref, ac) };
-  }).filter((l) => !l.f.ocultar);
+    return { r, ref, ac, f: flagsLinha(spec, r, ref, ac), com: colCom >= 0 ? (d.textos[i][colCom] || "") : "" };
+  });
+
+  // Top N: mantém as N linhas (não-subtotal) com maior |Δ| e agrupa o resto em "Outros"
+  const topN = +spec.topN || 0;
+  if (topN > 0) {
+    const cand = todas.filter((l) => !l.f.res && !l.f.ocultar);
+    if (cand.length > topN) {
+      const manter = new Set([...cand].sort((a, b) => Math.abs(b.ac - b.ref) - Math.abs(a.ac - a.ref)).slice(0, topN));
+      const fora = cand.filter((l) => !manter.has(l));
+      const ultimo = todas.indexOf(cand[cand.length - 1]);
+      const novas = [];
+      todas.forEach((l, i) => {
+        if (!fora.includes(l)) novas.push(l);
+        if (i === ultimo && spec.agruparOutros !== false && fora.length)
+          novas.push({ r: `Outros (${fora.length})`, ref: fora.reduce((a, x) => a + x.ref, 0), ac: fora.reduce((a, x) => a + x.ac, 0),
+            f: { inv: fora.every((x) => x.f.inv), res: false, neg: false, ocultar: false }, com: "" });
+      });
+      todas = novas;
+    }
+  }
+
+  // Cascata: subtotais começam do zero; demais linhas somam (custos invertidos subtraem)
+  let acum = 0;
+  todas.forEach((l) => {
+    if (l.f.res) { l.c0 = 0; l.c1 = l.ac; acum = l.ac; }
+    else if (!l.f.ocultar) { const c = l.f.inv ? -l.ac : l.ac; l.c0 = acum; l.c1 = acum + c; acum += c; }
+  });
+  const linhas = todas.filter((l) => !l.f.ocultar).map((l) => ({ ...l, dv: l.ac - l.ref, pct: l.ref !== 0 ? (l.ac - l.ref) / Math.abs(l.ref) : null }));
   if (!linhas.length) throw new Error("Todas as linhas estão ocultas.");
-  const un = unidadeTabela(spec, linhas.flatMap((l) => [l.ref, l.ac, l.dv]));
+  const cascata = !!spec.cascata;
+  const un = unidadeTabela(spec, linhas.flatMap((l) => [l.ref, l.ac, l.ac - l.ref]));
   const fmt = (v, sinal) => fmtTab(v, un, sinal);
   const fav = (l) => (l.f.inv ? l.dv <= 0 : l.dv >= 0);
+
+  // ----- comentários (caixa à direita, fora da largura da tabela)
+  const comentarios = spec.comentarios === false ? [] : linhas.filter((l) => l.com);
+  const comW = comentarios.length ? 250 : 0;
+  comentarios.forEach((l, k) => (l.nCom = k + 1));
 
   // ----- layout
   const tam = e.fonte + 1, rowH = Math.round(tam * 2.4);
   let titH = 0;
-  tela.fundo(0, 0, W, 10);
+  const larguraTotal = W + comW;
+  tela.fundo(0, 0, larguraTotal, 10);
   const fundo = tela.p[tela.p.length - 1];
   if (spec.titulo) {
     titH = 30;
-    tela.text(spec.titulo, 0, 0, "top", W, { size: e.fonte + 3, bold: true, align: "left", color: "#000000" });
-    tela.line(0, 21, W, 21, "#000000", 0.75);
+    tela.text(spec.titulo, 0, 0, "top", larguraTotal, { size: e.fonte + 3, bold: true, align: "left", color: "#000000" });
+    tela.line(0, 21, larguraTotal, 21, "#000000", 0.75);
   }
-  const cabH = 22, y0 = titH + cabH, H = y0 + linhas.length * rowH + 6;
-  fundo.h = H + 16;
+  const cabH = 22, y0 = titH + cabH;
+  let H = y0 + linhas.length * rowH + 6;
   const maxRot = Math.max(...linhas.map((l) => l.r.length));
   const lw = Math.min(220, Math.max(90, maxRot * tam * 0.56 + 14));
-  const refW = 64, resto = W - lw - refW;
-  const acW = resto * 0.38, dW = resto * 0.32, pW = resto - acW - dW;
+  const refW = 64, resto = W - lw - refW - (comW ? 18 : 0);
+  const acW = resto * (cascata ? 0.42 : 0.38), dW = resto * (cascata ? 0.30 : 0.32), pW = resto - acW - dW;
   const xRef = lw, xAc = lw + refW, xD = xAc + acW, xP = xD + dW;
   const yLinha = (i) => y0 + i * rowH + rowH / 2;
   const barH = rowH * 0.62;
   const cinzaEixo = "#8C8C8C";
 
   // ----- escalas
-  const acMin = Math.min(0, ...linhas.map((l) => l.ac)), acMax = Math.max(0, ...linhas.map((l) => l.ac));
+  const pontosAc = cascata ? linhas.flatMap((l) => [l.c0, l.c1]) : linhas.map((l) => l.ac);
+  const acMin = Math.min(0, ...pontosAc), acMax = Math.max(0, ...pontosAc);
   const acI1 = xAc + (acMin < 0 ? 46 : 6), acI2 = xAc + acW - 46;
   const xA = (v) => acI1 + ((v - acMin) / ((acMax - acMin) || 1)) * (acI2 - acI1);
   const dMax = Math.max(...linhas.map((l) => Math.abs(l.dv))) || 1;
@@ -542,7 +587,6 @@ function tabela(tela, d, W, spec) {
   const pcts = linhas.filter((l) => l.pct !== null).map((l) => Math.abs(l.pct));
   let pMax = Math.max(0, ...pcts) || 1;
   if (spec.suprimirPct !== false && pcts.length > 2) {
-    // valores muito acima dos demais viram seta no limite (não achatam a coluna)
     const ord = [...pcts].sort((a, b) => a - b), med = ord[Math.floor(ord.length / 2)] || ord[ord.length - 1];
     const normais = ord.filter((x) => x <= Math.max(med * 4, 0.05));
     if (normais.length) pMax = Math.max(...normais) || pMax;
@@ -560,15 +604,24 @@ function tabela(tela, d, W, spec) {
   // ----- linhas
   linhas.forEach((l, i) => {
     const y = yLinha(i), bold = l.f.neg || l.f.res;
-    if (l.f.res && i > 0) tela.line(0, y - rowH / 2, W, y - rowH / 2, "#BFBFBF", 0.75);
+    if (l.f.res && i > 0) tela.line(0, y - rowH / 2, W - (comW ? 18 : 0), y - rowH / 2, "#BFBFBF", 0.75);
     const pref = l.f.inv && !/^\s*[(\-–]/.test(l.r) ? "– " : l.f.res ? "= " : "";
     tela.text(pref + l.r, 0, y, "middle", lw - 8, { size: tam, bold, align: "left" });
     tela.text(fmt(l.ref), xRef + refW - 6, y, "middle", refW, { size: tam, bold, align: "right", color: "#404040" });
-    // atual: barra
-    const a0 = xA(0), a1 = xA(l.ac);
-    tela.rect(Math.min(a0, a1), y - barH / 2, Math.max(0.75, Math.abs(a1 - a0)), y + barH / 2, l.f.res ? e.total : e.total);
-    if (l.ac >= 0) tela.text(fmt(l.ac), a1 + 4, y, "middle", 60, { size: tam, bold, align: "left" });
-    else tela.text(fmt(l.ac), a1 - 4, y, "middle", 60, { size: tam, bold, align: "right" });
+    // atual: barra simples ou degrau da cascata
+    const v0 = cascata ? l.c0 : 0, v1 = cascata ? l.c1 : l.ac;
+    const a0 = xA(v0), a1 = xA(v1);
+    tela.rect(Math.min(a0, a1), y - barH / 2, Math.max(0.75, Math.abs(a1 - a0)), y + barH / 2, e.total);
+    if (cascata && i < linhas.length - 1) {
+      const prox = linhas[i + 1];
+      const nivel = prox.f.res ? null : prox.c0;
+      if (nivel !== null) tela.line(xA(nivel), y + barH / 2, xA(nivel), yLinha(i + 1) - barH / 2, "#7F7F7F", 0.75);
+    }
+    // rótulo do lado da ponta da barra; se não couber à esquerda, vai para a direita
+    const larguraRot = fmt(l.ac).length * tam * 0.6 + 6;
+    const cabeEsq = Math.min(a0, a1) - larguraRot >= xA(0) + 2;
+    if (v1 >= v0 || !cabeEsq) tela.text(fmt(l.ac), Math.max(a0, a1) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
+    else tela.text(fmt(l.ac), Math.min(a0, a1) - 4, y, "middle", 60, { size: tam, bold, align: "right" });
     // Δ absoluta
     const cor = fav(l) ? e.pos : e.neg;
     const dx = (l.dv / dMax) * dR;
@@ -576,17 +629,20 @@ function tabela(tela, d, W, spec) {
     if (l.dv >= 0) tela.text(fmt(l.dv, true), dC + Math.max(dx, 0) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
     else tela.text(fmt(l.dv, true), dC + dx - 4, y, "middle", 60, { size: tam, bold, align: "right" });
     // Δ %: alfinete (seta quando passa da escala)
-    if (l.pct === null) { tela.text("–", pC + 6, y, "middle", 30, { size: tam, align: "left", color: "#808080" }); return; }
-    const fora = Math.abs(l.pct) > pMax * 1.0001;
-    const px = Math.sign(l.pct) * Math.min(Math.abs(l.pct) / pMax, 1) * pR;
-    const txtP = fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1);
-    if (fora) tela.arrow(pC, y, pC + px + Math.sign(px) * 6, y, cor, 2);
+    if (l.pct === null) tela.text("–", pC + 6, y, "middle", 30, { size: tam, align: "left", color: "#808080" });
     else {
-      if (Math.abs(px) > 0.5) tela.line(pC, y, pC + px, y, cor, 2);
-      tela.dot(pC + px, y, 3, "#262626");
+      const fora = Math.abs(l.pct) > pMax * 1.0001;
+      const px = Math.sign(l.pct) * Math.min(Math.abs(l.pct) / pMax, 1) * pR;
+      if (fora) tela.arrow(pC, y, pC + px + Math.sign(px) * 6, y, cor, 2);
+      else {
+        if (Math.abs(px) > 0.5) tela.line(pC, y, pC + px, y, cor, 2);
+        tela.dot(pC + px, y, 3, "#262626");
+      }
+      const xt = pC + px + Math.sign(px || 1) * (fora ? 10 : 6);
+      tela.text(fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1), xt, y, "middle", 60, { size: tam, bold, italic: true, align: px < 0 ? "right" : "left" });
     }
-    const xt = pC + px + Math.sign(px || 1) * (fora ? 10 : 6);
-    tela.text(txtP, xt, y, "middle", 60, { size: tam, bold, italic: true, align: px < 0 ? "right" : "left" });
+    // marcador do comentário
+    if (l.nCom) tela.marcador(W - (comW ? 18 : 0) + 6, y, 7, l.nCom, "#1A53FF");
   });
 
   // ----- eixos verticais
@@ -594,7 +650,33 @@ function tabela(tela, d, W, spec) {
   tela.line(xA(0), yA, xA(0), yB, cinzaEixo, 1.5);
   tela.line(dC, yA, dC, yB, cinzaEixo, 1.5);
   tela.line(pC, yA, pC, yB, cinzaEixo, 1.5);
-  return H;
+
+  // ----- caixa de comentários
+  if (comW) {
+    const xC = W + 6, wC = comW - 6, tc = e.fonte;
+    let cursor = y0 - 4;
+    tela.line(W - 2, y0 - 6, W - 2, yB, "#E0E0E0", 0.75);
+    comentarios.forEach((l) => {
+      const y = Math.max(cursor, yLinha(linhas.indexOf(l)) - rowH / 2);
+      tela.marcador(xC + 8, y + 8, 7, l.nCom, "#1A53FF");
+      const seta = l.dv >= 0 ? "▲" : "▼"; // direção = sinal; cor = favorável/desfavorável
+      const modo = spec.comModo ?? "B";
+      const pctTxt = l.pct === null ? "" : fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1);
+      const absTxt = fmt(l.dv, true);
+      const varTxt = modo === "P" ? (pctTxt || absTxt) : modo === "A" ? absTxt : [pctTxt, absTxt].filter(Boolean).join(" | ");
+      const cab1 = `${l.r} ${fmt(l.ac)}`;
+      tela.text(cab1, xC + 20, y + 8, "middle", wC - 20, { size: tc, bold: true, align: "left" });
+      const xSeta = xC + 20 + cab1.length * tc * 0.6 + 4;
+      tela.text(seta, xSeta, y + 8, "middle", 12, { size: tc, align: "left", color: fav(l) ? e.pos : e.neg });
+      tela.text(varTxt, xSeta + 12, y + 8, "middle", wC, { size: tc, align: "left" });
+      const nLin = Math.min(4, Math.max(1, Math.ceil((l.com.length * tc * 0.55) / (wC - 20))));
+      tela.text(l.com, xC + 20, y + 17, "top", wC - 20, { size: tc, align: "left", wrap: true, maxLinhas: nLin, color: "#404040" });
+      cursor = y + 17 + tc * 1.35 * nLin + 8;
+    });
+    H = Math.max(H, cursor + 4);
+  }
+  fundo.h = H + 16;
+  return { altura: H, largura: larguraTotal };
 }
 
 // ---------------------------- Anotações --------------------------------------
