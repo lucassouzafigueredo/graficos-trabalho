@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.1";
-import { renderSVG } from "./render-svg.js?v=1.0.1";
-import { inserirNoExcel, listarGraficos } from "./render-excel.js?v=1.0.1";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.2";
+import { renderSVG } from "./render-svg.js?v=1.0.2";
+import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.2";
 import {
   todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.1";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.1";
-import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.1";
+} from "./styles.js?v=1.0.2";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.2";
+import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.2";
 
-const VERSAO = "1.0.1";
+const VERSAO = "1.0.2";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -34,7 +34,7 @@ function msg(texto, tipo = "") {
 }
 async function seguro(fn) {
   try { msg(""); await fn(); }
-  catch (e) { console.error(e); msg(e.message || String(e), "erro"); }
+  catch (e) { console.error(e); msg(descreverErro(e), "erro"); }
 }
 
 // ----------------------------------------------------------------- estilos
