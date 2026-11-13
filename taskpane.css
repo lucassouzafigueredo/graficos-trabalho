@@ -57,3 +57,6 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border
 .msg { font-size: 12px; padding: 6px 8px; border-radius: 4px; background: #eef4ff; }
 .msg.erro { background: #fde7e9; color: var(--erro); }
 .msg.ok { background: #e7f6e7; color: var(--ok); }
+
+.cores.desligada { opacity: .45; }
+#estCenariosBox label input + input { margin-left: -4px; }

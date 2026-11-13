@@ -1,6 +1,7 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
+let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página
 
 function quebrarLinhas(texto, largura, size) {
   const max = Math.max(1, Math.floor(largura / (size * 0.55)));
@@ -35,22 +36,22 @@ function textoSVG(p, fonte) {
 export function renderSVG(grafico, opts = {}) {
   const fonte = opts.fonte ?? "Segoe UI, Arial, sans-serif";
   const { largura, altura, prims } = grafico;
-  let defs = "", n = 0;
+  let defs = "";
+  const pref = `g${++contadorSVG}`;
   const partes = prims.map((p) => {
     switch (p.t) {
       case "rect": {
         let fill = p.fill;
-        if (p.hatch) {
-          const id = `h${n++}`;
-          defs += `<pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
-            `<rect width="5" height="5" fill="#fff"/><line x1="0" y1="0" x2="0" y2="5" stroke="${p.fill}" stroke-width="2"/></pattern>`;
+        if (p.listra) {
+          const id = `${pref}h${defs.length}`;
+          defs += padraoListra(id, p.fill, p.listra);
           fill = `url(#${id})`;
         }
         const stroke = p.stroke ? ` stroke="${p.stroke}" stroke-width="1"` : "";
         return `<rect x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" width="${p.w.toFixed(1)}" height="${p.h.toFixed(1)}" fill="${fill}"${stroke}/>`;
       }
       case "line": {
-        const marker = p.arrow ? ` marker-end="url(#seta)"` : "";
+        const marker = p.arrow ? ` marker-end="url(#${pref}seta)"` : "";
         const dash = DASH[p.dash] ? ` stroke-dasharray="${DASH[p.dash]}"` : "";
         return `<line x1="${p.x1.toFixed(1)}" y1="${p.y1.toFixed(1)}" x2="${p.x2.toFixed(1)}" y2="${p.y2.toFixed(1)}" stroke="${p.color}" stroke-width="${p.w}"${dash}${marker}/>`;
       }
@@ -65,16 +66,22 @@ export function renderSVG(grafico, opts = {}) {
         return "";
     }
   });
-  defs += `<marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>`;
+  defs += `<marker id="${pref}seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>`;
   const m = 10;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${largura + 2 * m} ${altura + 2 * m}" ` +
     `width="${opts.width ?? largura + 2 * m}" preserveAspectRatio="xMidYMin meet"><defs>${defs}</defs>${partes.join("")}</svg>`;
 }
 
-// SVG mínimo de um retângulo hachurado (o Excel não aceita preenchimento com padrão via API)
-export function svgHachura(w, h, cor) {
+// Padrão de listras diagonais: fundo + listra
+function padraoListra(id, fundo, listra) {
+  return `<pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+    `<rect width="6" height="6" fill="${fundo}"/><line x1="1" y1="0" x2="1" y2="6" stroke="${listra}" stroke-width="2.4"/></pattern>`;
+}
+
+// SVG de um retângulo listrado (o Excel não aceita preenchimento com padrão via API)
+export function svgHachura(w, h, fundo, listra, borda) {
+  const stroke = borda ? ` stroke="${borda}" stroke-width="1"` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
-    `<defs><pattern id="p" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
-    `<rect width="5" height="5" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="5" stroke="${cor}" stroke-width="2"/></pattern></defs>` +
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" fill="url(#p)" stroke="${cor}" stroke-width="1"/></svg>`;
+    `<defs>${padraoListra("p", fundo, listra)}</defs>` +
+    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" fill="url(#p)"${stroke}/></svg>`;
 }

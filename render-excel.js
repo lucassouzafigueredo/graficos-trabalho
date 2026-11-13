@@ -8,7 +8,7 @@
 // no pior caso, mantém a linha contínua em vez de derrubar o gráfico inteiro.
 // Se algo essencial falhar, as formas parciais são apagadas.
 // =============================================================================
-import { svgHachura } from "./render-svg.js?v=1.0.4";
+import { svgHachura } from "./render-svg.js?v=1.0.5";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const HALIGN = { left: "Left", center: "Center", right: "Right" };
@@ -58,6 +58,7 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
   const criadas = [];
   const tracejadas = { dash: [], dot: [] };
   const setas = [];
+  const listradas = []; // retângulos que recebem listras (SVG) na fase 2b
   const pesos = new Map(); // espessura -> formas (aplicadas na fase 2)
   const peso = (s, w) => { if (!pesos.has(w)) pesos.set(w, []); pesos.get(w).push(s); };
   const pos = (s, x, y, w, h) => { s.left = L + x; s.top = T + y; s.width = Math.max(0.75, w); s.height = Math.max(0.75, h); };
@@ -68,16 +69,11 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
       let s;
       switch (p.t) {
         case "rect":
-          if (p.hatch) {
-            try {
-              s = shapes.addSvg(svgHachura(Math.round(p.w * 4 / 3), Math.round(p.h * 4 / 3), p.fill));
-            } catch { s = null; }
-            if (!s) { s = shapes.addGeometricShape("Rectangle"); s.fill.setSolidColor("#FFFFFF"); s.lineFormat.color = p.fill; peso(s, 1.5); }
-          } else {
-            s = shapes.addGeometricShape("Rectangle");
-            s.fill.setSolidColor(p.fill);
-            if (p.stroke) { s.lineFormat.color = p.stroke; peso(s, 1); } else s.lineFormat.visible = false;
-          }
+          // listrado: primeiro um retângulo sólido (cor de fundo); as listras entram na fase 2b
+          s = shapes.addGeometricShape("Rectangle");
+          s.fill.setSolidColor(p.fill);
+          if (p.stroke) { s.lineFormat.color = p.stroke; peso(s, 1); } else s.lineFormat.visible = false;
+          if (p.listra) listradas.push({ s, p });
           pos(s, p.x, p.y, p.w, p.h);
           break;
         case "line":
@@ -126,6 +122,21 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
     await aplicarComAlternativas(context, tracejadas.dash, (s, v) => (s.lineFormat.dashStyle = v), DASH.dash);
     await aplicarComAlternativas(context, tracejadas.dot, (s, v) => (s.lineFormat.dashStyle = v), DASH.dot);
     await aplicarComAlternativas(context, setas, (s, v) => { s.line.endArrowheadStyle = v; }, ["Triangle", "Stealth", "Open"]);
+
+    // ---------------- fase 2b: listras (imagem SVG sobre o retângulo); se o Excel recusar, fica sólido
+    for (const { s: base, p } of listradas) {
+      try {
+        const img = shapes.addSvg(svgHachura(Math.max(2, Math.round(p.w * 4 / 3)), Math.max(2, Math.round(p.h * 4 / 3)), p.fill, p.listra, p.stroke));
+        pos(img, p.x, p.y, p.w, p.h);
+        img.load("id");
+        await context.sync();
+        criadas.splice(criadas.indexOf(base), 1, img);
+        base.delete();
+        await context.sync();
+      } catch (e) {
+        console.warn("Listras recusadas; barra mantida sólida:", descreverErro(e));
+      }
+    }
 
     // ---------------- fase 3: agrupar e gravar os metadados
     const grupo = shapes.addGroup(criadas.map((s) => s.id));

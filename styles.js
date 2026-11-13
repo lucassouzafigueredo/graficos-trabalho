@@ -19,6 +19,15 @@ export const ESTILOS_PRONTOS = [
     pos: "#E62020", neg: "#8CC63F",
     pilha: ["#3B5770", "#627C94", "#8CA0B4", "#B4C3D2", "#D2DCE6", "#EBF0F5"],
     colunas: ["#3B5770", "#8CA0B4", "#B4C3D2", "#D2DCE6"] },
+  { ...base, id: "orc-fc", nome: "Padrão Orçamento x Forecast", pronto: true, total: "#26408F", porSinal: false,
+    pilha: ["#111A4A", "#26408F", "#4F8DF0", "#7FAEF3", "#A9CBF5", "#D4E4FA"],
+    colunas: ["#A9CBF5", "#4F8DF0", "#26408F", "#111A4A"],
+    // aparência por cenário, reconhecido pelo rótulo da barra (ver cenarioDe no motor)
+    cenarios: {
+      real: { fill: "#A9CBF5" },
+      orc: { fill: "#4F8DF0", listra: "#9DC1F7" },
+      fc: [{ fill: "#26408F", listra: "#6F8BD3" }, { fill: "#111A4A", listra: "#4C5E9E" }],
+    } },
   { ...base, id: "cinza", nome: "Cinza executivo", pronto: true, total: "#404040", delta: "#CDCDCD",
     pilha: ["#262626", "#595959", "#808080", "#A6A6A6", "#C8C8C8", "#E1E1E1"],
     colunas: ["#404040", "#A6A6A6", "#C8C8C8", "#E1E1E1"] },

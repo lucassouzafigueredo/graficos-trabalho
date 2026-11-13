@@ -9,8 +9,8 @@ export function fmtNum(v, comSinal = false) {
   let s;
   if (a >= 1e9) s = f1.format(a / 1e9) + config.sufBi;
   else if (a >= 1e6) s = f1.format(a / 1e6) + config.sufMi;
-  else if (a >= 1e3) s = f1.format(a / 1e3) + config.sufMil;
-  else if (Number.isInteger(a)) s = f0.format(a);
+  else if (a >= 1e4) s = f1.format(a / 1e3) + config.sufMil;
+  else if (Number.isInteger(a) || a >= 1e3) s = f0.format(a); // até 9.999: número cheio (ex.: 1.057)
   else s = f1.format(a);
   if (v < 0) return "-" + s;
   if (comSinal && v > 0) return "+" + s;

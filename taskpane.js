@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.4";
-import { renderSVG } from "./render-svg.js?v=1.0.4";
-import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.4";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.5";
+import { renderSVG } from "./render-svg.js?v=1.0.5";
+import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.5";
 import {
-  todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
+  ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.4";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.4";
-import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.4";
+} from "./styles.js?v=1.0.5";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.5";
+import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.5";
 
-const VERSAO = "1.0.4";
+const VERSAO = "1.0.5";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -70,6 +70,14 @@ function abrirEditor() {
   $("estPorSinal").checked = !!e.porSinal;
   $("estPilha").innerHTML = e.pilha.map((c, i) => `<input type="color" value="${c}" title="Segmento ${i + 1}">`).join("");
   $("estColunas").innerHTML = e.colunas.map((c, i) => `<input type="color" value="${c}" title="Série ${i + 1}">`).join("");
+  const cen = e.cenarios ?? ESTILOS_PRONTOS.find((x) => x.cenarios).cenarios;
+  $("estCenarios").checked = !!e.cenarios;
+  $("cenReal").value = cen.real.fill;
+  $("cenOrcF").value = cen.orc.fill; $("cenOrcL").value = cen.orc.listra ?? cen.orc.fill;
+  $("cenFc1F").value = cen.fc[0].fill; $("cenFc1L").value = cen.fc[0].listra ?? cen.fc[0].fill;
+  const fc2 = cen.fc[1] ?? cen.fc[0];
+  $("cenFc2F").value = fc2.fill; $("cenFc2L").value = fc2.listra ?? fc2.fill;
+  $("estCenariosBox").classList.toggle("desligada", !e.cenarios);
 }
 function estiloDoEditor() {
   return {
@@ -78,6 +86,11 @@ function estiloDoEditor() {
     porSinal: $("estPorSinal").checked,
     pilha: [...$("estPilha").querySelectorAll("input")].map((i) => i.value.toUpperCase()),
     colunas: [...$("estColunas").querySelectorAll("input")].map((i) => i.value.toUpperCase()),
+    cenarios: $("estCenarios").checked ? {
+      real: { fill: $("cenReal").value },
+      orc: { fill: $("cenOrcF").value, listra: $("cenOrcL").value },
+      fc: [{ fill: $("cenFc1F").value, listra: $("cenFc1L").value }, { fill: $("cenFc2F").value, listra: $("cenFc2L").value }],
+    } : undefined,
   };
 }
 
@@ -390,6 +403,8 @@ function carregarDemo(i) {
   st.valores = d.valores; st.textos = textosDemo(d.valores);
   st.fonte = null;
   st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo) };
+  if (d.semCagr) st.spec.anot.cagr.on = false;
+  if (d.estilo) $("estilo").value = d.estilo;
   processarValores();
   $("endereco").value = "(exemplo)";
   escreverForm(); preview();

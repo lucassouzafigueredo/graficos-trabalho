@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.0.4";
+import { fmtNum, fmtPct } from "./formats.js?v=1.0.5";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -115,6 +115,31 @@ class Tela {
   regBarra(cx, valor, nivel) { this.barras.push({ cx, valor, nivel }); }
 }
 
+
+// -----------------------------------------------------------------------------
+// Cenários (estilo "Orçamento x Forecast"): a aparência da barra vem do rótulo
+//   Orçamento: BGT, Orçamento, Budget, Plano | Forecast: 6+6, 9+3, FC, Forecast
+//   Real: o resto (LY, AC, Real, anos...)
+// -----------------------------------------------------------------------------
+export function cenarioDe(rotulo) {
+  const r = String(rotulo).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/\b\d{1,2}\s*\+\s*\d{1,2}\b/.test(r) || /\b(FC|FCST|FORECAST|REFORECAST|RF|PROJ|PROJECAO|PREVISTO)\b/.test(r)) return "fc";
+  if (/\b(BGT|BUDGET|ORC|ORCAMENTO|ORCADO|PLANO|PLAN|PBR|META)\b/.test(r)) return "orc";
+  return "real";
+}
+
+// Lista com a aparência de cada barra (ou null = aparência padrão do gráfico)
+function aparencias(e, rotulos) {
+  if (!e.cenarios) return rotulos.map(() => null);
+  let nFc = 0;
+  return rotulos.map((r) => {
+    const c = cenarioDe(r);
+    if (c === "fc") { const lista = e.cenarios.fc; return { ...lista[Math.min(nFc++, lista.length - 1)] }; }
+    return { ...e.cenarios[c] };
+  });
+}
+const rectAparencia = (tela, bx, ya, bw, yb, ap) => tela.rect(bx, ya, bw, yb, ap.fill, { listra: ap.listra, stroke: ap.stroke });
+
 const corTextoSobre = (hex) => {
   const n = parseInt(hex.slice(1), 16);
   const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
@@ -193,6 +218,7 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
   const xL = L + 2, xR = L + W - 2 - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.66;
   tela.iniciarBarras(bw);
+  const ap = aparencias(e, d.rot);
   const rotulo = (txt, acima, cx, i) => acima
     ? tela.text(txt, cx, tela.Y(hi[i]) - 2, "bottom", catW + 16, { size: e.fonte + 1 })
     : tela.text(txt, cx, tela.Y(lo[i]) + 2, "top", catW + 16, { size: e.fonte + 1 });
@@ -201,10 +227,10 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, ac[i], ac[i]);
     if (i === 0) {
-      tela.rect(bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), e.total, { hatch: true, stroke: e.total });
+      rectAparencia(tela, bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: "#FFFFFF", listra: e.total, stroke: e.total });
       rotulo(fmtNum(ini), ini >= 0, cx, i);
     } else if (i === n - 1) {
-      tela.rect(bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), e.total);
+      rectAparencia(tela, bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: e.total });
       rotulo(fmtNum(fim), fim >= 0, cx, i);
     } else {
       const dv = ac[i] - ac[i - 1];
@@ -275,6 +301,7 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
   const C = (v) => tela.clip(v), Y = (v) => tela.Y(v);
   const fmtDelta = (v) => (e.sinalDelta ? fmtNum(v, true) : fmtNum(Math.abs(v)));
   let legOk = false;
+  const ap = aparencias(e, d.rot);
 
   for (let i = 0; i < n; i++) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
@@ -304,7 +331,8 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
         if (a <= 0) continue;
         const cor = m === 1 ? e.total : e.pilha[c % 6];
         const y1 = Y(C(cur)), y2 = Y(C(cur + a));
-        tela.rect(bx, y1, bw, y2, cor);
+        if (m === 1 && tp[i] === "T" && ap[i]) rectAparencia(tela, bx, y1, bw, y2, ap[i]);
+        else tela.rect(bx, y1, bw, y2, cor);
         if (m > 1 && y1 - y2 >= e.fonte + 3)
           tela.text(fmtNum(a), cx, (y1 + y2) / 2, "middle", bw, { size: e.fonte + 1, color: corTextoSobre(cor) });
         if (m > 1 && !legOk && tp[i] === "T")
@@ -341,13 +369,17 @@ function colunas(tela, d, W, H, titulo, anot) {
   const xL = 0, xR = W - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.62;
   tela.iniciarBarras(bw);
+  const ap = aparencias(e, d.rot);
   for (let i = 0; i < n; i++) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, tot[i], tot[i]);
     let cur = 0;
     d.v[i].forEach((x, c) => {
       const a = Math.abs(num(x));
-      if (a > 0) { tela.rect(bx, tela.Y(cur), bw, tela.Y(cur + a), e.colunas[c % 4]); cur += a; }
+      if (a <= 0) return;
+      if (d.nCol === 1 && ap[i]) rectAparencia(tela, bx, tela.Y(cur), bw, tela.Y(cur + a), ap[i]);
+      else tela.rect(bx, tela.Y(cur), bw, tela.Y(cur + a), e.colunas[c % 4]);
+      cur += a;
     });
     tela.text(fmtNum(tot[i]), cx, tela.Y(tot[i]) - 3, "bottom", catW, { size: e.fonte + 4 });
     tela.text(d.rot[i], cx, tela.pBot + 4, "top", catW, { size: e.fonte + 1, wrap: true });
@@ -371,10 +403,11 @@ function comparacao(tela, d, W, H, titulo, anot) {
   const xL = 0, xR = W - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.6;
   tela.iniciarBarras(bw);
+  const ap = aparencias(e, d.rot);
   vals.forEach((v, i) => {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, v, v);
-    tela.rect(bx, tela.Y(0), bw, tela.Y(v), i === 0 ? e.colunas[0] : e.colunas[1]);
+    rectAparencia(tela, bx, tela.Y(0), bw, tela.Y(v), ap[i] ?? { fill: i === 0 ? e.colunas[0] : e.colunas[1] });
     if (v >= 0) tela.text(fmtNum(v), cx, tela.Y(v) - 3, "bottom", catW, { size: e.fonte + 6 });
     else tela.text(fmtNum(v), cx, tela.Y(v) + 3, "top", catW, { size: e.fonte + 6 });
     tela.text(d.rot[i], cx, tela.pBot + 4, "top", catW, { size: e.fonte + 1, wrap: true });

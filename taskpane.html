@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.0.4">
+<link rel="stylesheet" href="taskpane.css?v=1.0.5">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -93,6 +93,14 @@
     <div class="cores seis" id="estPilha"></div>
     <p class="sub">Colunas / comparação</p>
     <div class="cores quatro" id="estColunas"></div>
+    <label class="check"><input type="checkbox" id="estCenarios"> Cores por cenário (Real / Orçamento / Forecast)</label>
+    <div id="estCenariosBox" class="cores">
+      <label><input type="color" id="cenReal"> Real / LY</label>
+      <label><input type="color" id="cenOrcF"><input type="color" id="cenOrcL"> Orçamento</label>
+      <label><input type="color" id="cenFc1F"><input type="color" id="cenFc1L"> Forecast 1</label>
+      <label><input type="color" id="cenFc2F"><input type="color" id="cenFc2L"> Forecast 2+</label>
+    </div>
+    <p class="muted">Orçamento e Forecast: fundo + listra. O cenário é reconhecido pelo rótulo: BGT/Orçamento; 6+6, 9+3, FC/Forecast; o resto é Real.</p>
     <div class="linha botoes">
       <button id="btnSalvarEstilo">Salvar estilo</button>
       <button id="btnExcluirEstilo" class="sec">Excluir</button>
@@ -154,6 +162,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.0.4"></script>
+<script type="module" src="taskpane.js?v=1.0.5"></script>
 </body>
 </html>

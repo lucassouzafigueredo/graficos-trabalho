@@ -23,6 +23,8 @@ export const DEMOS = [
     ["Ajuste % Do Aumento da Carteira", "D", -15.29], ["FC 9+3 Operacional", "T", -229.93]] },
   { tipo: "COL", titulo: "Receita, R$ bi", valores: [
     ["Ano", "Serviços", "Produtos"], [2019, 4, 4], [2020, 7, 6], [2021, 6, 6], [2022, 9, 7], [2023, 11, 8], [2024, 15, 11]] },
+  { tipo: "COL", titulo: "Receita – Orçamento x Forecast", estilo: "orc-fc", semCagr: true, valores: [
+    ["Cenário", "Receita"], ["LY", 1180], ["BGT", 1057], ["6+6", 993], ["9+3", 989]] },
   { tipo: "COMP", titulo: "EBITDA, R$ mi", valores: [["Ano", "EBITDA"], [2023, 13.7], [2024, 15.0]] },
 ];
 
