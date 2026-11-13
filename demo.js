@@ -30,3 +30,22 @@ export const DEMOS = [
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
 export const textos = (valores) => valores.map((l) => l.map((x) => (x === null ? "" : String(x))));
+
+// Roteiro da "planilha de exemplos": cada item mostra uma possibilidade do add-in.
+// anot: [variação 1, variação 2, cagr] em forma resumida; barras: cores por barra.
+const v = (de, para, modo = "P", balao = false) => ({ on: true, de, para, modo, balao });
+const off = { on: false, de: 1, para: 0, modo: "P", balao: false };
+export const EXEMPLOS = [
+  { demo: 0, estilo: "ibcs", descricao: "1. Cascata IBCS – FC hachurado, variações verde/vermelho e indicador % FC→AC" },
+  { demo: 1, estilo: "ibcs", descricao: "2. Múltiplos IBCS – uma cascata por unidade, todas na mesma escala" },
+  { demo: 2, estilo: "cons-azul", descricao: "3. Cascata empilhada – totais por área, variações em cinza e legenda à esquerda" },
+  { demo: 3, estilo: "cons-navy", corte: 120, descricao: "4. Corte de eixo – barras grandes cortadas com // (Corte do eixo = 120)" },
+  { demo: 4, estilo: "orc-fc", anot: { v: [v(1, 0, "B", true), off], cagr: { on: false, de: 1, para: 0 } },
+    descricao: "5. Ponte BGT → FC – estilo Orçamento x Forecast e variação em valor e % com balão" },
+  { demo: 5, estilo: "cons-azul", anot: { v: [v(5, 6, "P", true), off], cagr: { on: true, de: 1, para: 6 } },
+    descricao: "6. Colunas empilhadas – linha de CAGR e variação do último ano com balão" },
+  { demo: 6, estilo: "orc-fc", anot: { v: [v(2, 4, "A"), off], cagr: { on: false, de: 1, para: 0 } },
+    barras: { LY: { modo: "cor", fill: "#7F7F7F", listrado: false } },
+    descricao: "7. Orçamento x Forecast – cenário reconhecido pelo nome; LY com cor escolhida em Cores das barras" },
+  { demo: 7, estilo: "cons-azul", descricao: "8. Comparação – seta e balão de variação entre dois períodos" },
+];

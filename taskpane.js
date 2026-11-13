@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.0.7";
-import { renderSVG } from "./render-svg.js?v=1.0.7";
-import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.7";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.0.8";
+import { renderSVG } from "./render-svg.js?v=1.0.8";
+import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.8";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.7";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.7";
-import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.7";
+} from "./styles.js?v=1.0.8";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.8";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.0.8";
 
-const VERSAO = "1.0.7";
+const VERSAO = "1.0.8";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -411,6 +411,69 @@ async function atualizarTodos() {
   msg(`${n} gráfico(s) atualizado(s).`, "ok");
 }
 
+
+// ----------------------------------------------------------------- planilha de exemplos
+async function gerarExemplos() {
+  if (!st.noExcel) { msg("Disponível dentro do Excel. Aqui use a lista de exemplos acima."); return; }
+  let total = 0, nomeAba = "";
+  await Excel.run(async (ctx) => {
+    const wss = ctx.workbook.worksheets;
+    wss.load("items/name");
+    await ctx.sync();
+    const existentes = new Set(wss.items.map((w) => w.name));
+    nomeAba = "Exemplos Gráficos FP&A";
+    for (let k = 2; existentes.has(nomeAba); k++) nomeAba = `Exemplos Gráficos FP&A (${k})`;
+    const ws = wss.add(nomeAba);
+    ws.activate();
+    try { ws.showGridlines = false; } catch { /* versão antiga */ }
+    ws.getRange("A:A").format.columnWidth = 170;
+    const cab = ws.getRange("A1");
+    cab.values = [["Exemplos do add-in Gráficos FP&A – mude os números e veja os gráficos se atualizarem. Para editar, escolha o gráfico na lista do painel."]];
+    cab.format.font.bold = true;
+    const colGraf = ws.getRange("H1");
+    colGraf.load("left");
+    await ctx.sync();
+
+    let linha = 3;
+    for (const ex of EXEMPLOS) {
+      const demo = DEMOS[ex.demo];
+      const nl = demo.valores.length, nc = Math.max(...demo.valores.map((l) => l.length));
+      const matriz = demo.valores.map((l) => [...l, ...Array(nc - l.length).fill("")].map((x) => (x === null ? "" : x)));
+      const desc = ws.getRange(`A${linha}`);
+      desc.values = [[ex.descricao]];
+      desc.format.font.bold = true;
+      desc.format.font.color = "#1A53FF";
+      const r0 = linha + 1;
+      const endereco = montarA1(r0, 1, r0 + nl - 1, nc);
+      ws.getRange(montarA1(r0, 1, r0 + nl - 1, 1)).numberFormat = matriz.map(() => ["@"]); // rótulos como texto (6+6, 2024…)
+      const bloco = ws.getRange(endereco);
+      bloco.values = matriz.map((l) => l.map((x, c) => (c === 0 ? String(x) : x)));
+      ws.getRange(montarA1(r0, 1, r0, nc)).format.font.bold = true;
+      if (nl > 1 && nc > 1)
+        ws.getRange(montarA1(r0 + 1, 2, r0 + nl - 1, nc)).numberFormat = matriz.slice(1).map((l) => l.slice(1).map(() => "#,##0.0;-#,##0.0"));
+      desc.load("top");
+      await ctx.sync();
+
+      const fonte = { sheet: nomeAba, address: endereco, tabela: null, autoLinhas: true };
+      const r = await lerFonte(ctx, fonte);
+      const dados = lerDados(r.values, r.text, TIPOS[demo.tipo].comTipo);
+      const estilo = estiloPorId(ex.estilo);
+      const spec = {
+        tipo: demo.tipo, titulo: demo.titulo, corte: ex.corte ?? demo.corte ?? 0,
+        W: TIPOS[demo.tipo].W, H: TIPOS[demo.tipo].H,
+        anot: ex.anot ? clone(ex.anot) : anotacoesPadrao(demo.tipo), barras: ex.barras ?? {},
+      };
+      const g = montarGrafico(dados, spec, estilo);
+      await inserirNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
+      total++;
+      // próximo bloco abaixo do gráfico (linhas de ~15 pt) e sempre depois dos dados
+      linha = Math.max(r0 + nl + 2, linha + Math.ceil((g.altura + 40) / 15));
+    }
+  });
+  await recarregarLista();
+  msg(`${total} exemplos criados na aba “${nomeAba}”. Escolha qualquer um na lista acima para ver como foi configurado.`, "ok");
+}
+
 // ----------------------------------------------------------------- atualização automática
 function aoMudar(ev) {
   if (!$("autoAtualizar").checked) return;
@@ -509,6 +572,7 @@ function ligarEventos() {
   $("btnAplicar").onclick = () => seguro(aplicar);
   $("btnRecarregarLista").onclick = () => seguro(() => recarregarLista());
   $("btnAtualizarTodos").onclick = () => seguro(atualizarTodos);
+  $("btnExemplos").onclick = () => seguro(gerarExemplos);
   $("listaGraficos").onchange = (e) => seguro(() => selecionarGrafico(e.target.value));
   $("tipo").onchange = (e) => trocarTipo(e.target.value);
   $("estilo").onchange = () => { if ($("estilo").value !== "__grafico") definirEstiloAtual($("estilo").value); lerCoresBarras(); preview(); };
