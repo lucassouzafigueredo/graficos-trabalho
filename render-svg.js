@@ -1,5 +1,5 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
-import { poligonosListras } from "./listras.js?v=1.4.0";
+import { poligonosListras } from "./listras.js?v=1.5.0";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
 let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página
@@ -72,6 +72,11 @@ export function renderSVG(grafico, opts = {}) {
       case "marcador":
         return `<circle cx="${p.cx.toFixed(1)}" cy="${p.cy.toFixed(1)}" r="${p.r}" fill="#fff" stroke="${p.color}" stroke-width="1.1"/>` +
           `<text x="${p.cx.toFixed(1)}" y="${(p.cy + p.size * 0.36).toFixed(1)}" font-family="${fonte}" font-size="${p.size}" fill="${p.color}" text-anchor="middle">${esc(p.n)}</text>`;
+      case "arco": {
+        const P = (a, r) => `${(p.cx + r * Math.sin(a)).toFixed(2)},${(p.cy - r * Math.cos(a)).toFixed(2)}`;
+        const g = p.a1 - p.a0 > Math.PI ? 1 : 0;
+        return `<path d="M${P(p.a0, p.r1)} A${p.r1.toFixed(2)},${p.r1.toFixed(2)} 0 ${g} 1 ${P(p.a1, p.r1)} L${P(p.a1, p.r0)} A${p.r0.toFixed(2)},${p.r0.toFixed(2)} 0 ${g} 0 ${P(p.a0, p.r0)} Z" fill="${p.fill}"/>`;
+      }
       case "dot":
         return `<circle cx="${p.cx.toFixed(1)}" cy="${p.cy.toFixed(1)}" r="${p.r}" fill="${p.color}"/>`;
       default:

@@ -11,8 +11,8 @@
 // Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
 // é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.4.0";
-import { renderSVG } from "./render-svg.js?v=1.4.0";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.5.0";
+import { renderSVG } from "./render-svg.js?v=1.5.0";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const SETAS = ["Triangle", "Stealth", "Open"];
@@ -241,6 +241,20 @@ async function inserirComFormas(context, sheet, grafico, L, T, meta, usarMemoria
           s.textFrame.textRange.text = p.n;
           prepararTexto(s, { size: p.size, color: p.color, align: "center", valign: "middle" }, fonte);
           break;
+        case "arco": {
+          // sem forma de arco ajustável no Office.js: traços grossos curtos ao longo do raio médio
+          const rm = (p.r0 + p.r1) / 2, esp = Math.max(1, Math.round(p.r1 - p.r0));
+          const passos = Math.max(2, Math.ceil((p.a1 - p.a0) / (Math.PI / 24)));
+          const da = (p.a1 - p.a0) / passos, sobra = Math.min(da * 0.25, 0.6 / rm);
+          for (let k = 0; k < passos; k++) {
+            const a = p.a0 + k * da - (k ? sobra : 0), b = p.a0 + (k + 1) * da + (k < passos - 1 ? sobra : 0);
+            const l = shapes.addLine(L + p.cx + rm * Math.sin(a), T + p.cy - rm * Math.cos(a), L + p.cx + rm * Math.sin(b), T + p.cy - rm * Math.cos(b), "Straight");
+            l.lineFormat.color = p.fill;
+            peso(l, esp);
+            criadas.push(l);
+          }
+          continue;
+        }
         case "dot":
           s = shapes.addGeometricShape("Ellipse");
           pos(s, p.cx - p.r, p.cy - p.r, 2 * p.r, 2 * p.r);

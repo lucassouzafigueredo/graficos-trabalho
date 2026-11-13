@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.4.0";
-import { renderSVG } from "./render-svg.js?v=1.4.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.4.0";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.5.0";
+import { renderSVG } from "./render-svg.js?v=1.5.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.5.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.4.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.4.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.4.0";
+} from "./styles.js?v=1.5.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.5.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.5.0";
 
-const VERSAO = "1.4.0";
+const VERSAO = "1.5.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -215,12 +215,26 @@ function lerColunasTabela() {
   if (mudouAtual) desenharColunasTabela();
 }
 
+const DICAS_DESTAQUE = {
+  ROS: ["Roscas proporcionais", "Layout: <b>Categoria | Coluna 1 | Coluna 2…</b> (ex.: canais × anos). Cada coluna vira uma rosca com área proporcional ao total. Com uma linha em destaque, ela fica na cor do estilo, as demais em cinza, e aparece a variação da participação em p.p."],
+  BOL: ["Matriz de bolhas", "Layout: <b>Linha | Colunas…</b>. O tamanho da bolha é o |valor| e a cor é a faixa. Para colorir por <b>outra medida</b> (ex.: margem %), repita os cabeçalhos: <b>T1 T2 T3 | T1 T2 T3</b>. O 1º bloco dá o tamanho e o 2º a cor. Valores negativos e positivos usam faixas vermelhas e verdes."],
+};
+function desenharDestaque() {
+  const sel = $("destaque");
+  const rot = st.dados ? st.dados.rot : [];
+  sel.innerHTML = `<option value="">— nenhuma —</option>` + rot.map((r) => `<option>${escHtml(r)}</option>`).join("");
+  sel.value = rot.includes(st.spec.destaque) ? st.spec.destaque : "";
+  $("bolValores").checked = st.spec.valores !== false;
+}
 function mostrarSecoesDoTipo() {
-  const tab = st.spec.tipo === "TAB";
+  const t = st.spec.tipo, tab = t === "TAB", dest = t === "ROS" || t === "BOL";
   $("secTabela").hidden = !tab;
-  $("secAnot").hidden = tab;
-  $("secCores").hidden = tab;
-  $("lblAltura").hidden = tab;
+  $("secDestaque").hidden = !dest;
+  $("secAnot").hidden = tab || dest;
+  $("secCores").hidden = tab || dest;
+  $("lblAltura").hidden = tab || t === "BOL";
+  $("lblBolValores").hidden = t !== "BOL";
+  if (dest) { $("tituloDestaque").textContent = DICAS_DESTAQUE[t][0]; $("dicaDestaque").innerHTML = DICAS_DESTAQUE[t][1]; }
 }
 
 // ----------------------------------------------------------------- formulário
@@ -247,6 +261,7 @@ function escreverForm() {
   $("tabOutros").checked = s.agruparOutros !== false;
   desenharColunasTabela();
   desenharLinhasTabela();
+  desenharDestaque();
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => (r.checked = r.value === modo));
@@ -286,6 +301,7 @@ function lerForm() {
   lerCoresBarras();
   lerColunasTabela();
   lerLinhasTabela();
+  if (s.tipo === "ROS" || s.tipo === "BOL") { s.destaque = $("destaque").value || undefined; s.valores = $("bolValores").checked; }
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
   s.suprimirPct = $("tabSuprimir").checked;
@@ -557,7 +573,7 @@ async function gerarExemplos() {
         anot: ex.anot ? clone(ex.anot) : anotacoesPadrao(demo.tipo), barras: ex.barras ?? {},
         modo: modoPadrao(),
         cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
-        ordem: ex.ordem ?? "planilha", colunas: ex.colunas,
+        ordem: ex.ordem ?? "planilha", colunas: ex.colunas, destaque: ex.destaque ?? demo.destaque,
       };
       const g = montarGrafico(dados, spec, estilo);
       await desenharNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
@@ -616,7 +632,7 @@ function carregarDemo(i) {
   const d = DEMOS[i];
   st.valores = d.valores; st.textos = textosDemo(d.valores);
   st.fonte = null;
-  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0, ordem: d.ordem ?? "planilha" };
+  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0, ordem: d.ordem ?? "planilha", destaque: d.destaque };
   if (d.semCagr) st.spec.anot.cagr.on = false;
   if (d.estilo) $("estilo").value = d.estilo;
   processarValores();
@@ -690,6 +706,7 @@ function ligarEventos() {
   ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros",
     "tabAtual", "tabOrdem", "tabVisRef", "tabVisAc", "tabVisAbs", "tabVisPct"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabRefs").addEventListener("change", reagir);
+  ["destaque", "bolValores"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };

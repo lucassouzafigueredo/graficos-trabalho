@@ -47,6 +47,18 @@ export const DEMOS = [
     ["Despesas comerciais", 1100, 1050, 1020, ""], ["Despesas administrativas", 900, 940, 960, ""], ["EBITDA", 2200, 2160, 2220, ""],
     ["D&A", 400, 405, 410, ""], ["Resultado financeiro", -300, -350, -380, ""],
     ["IR/CS", 510, 470, 480, ""], ["Lucro líquido", 990, 935, 950, ""]] },
+  { tipo: "ROS", titulo: "Receita por canal, R$ mi – o Digital ganha participação", estilo: "cons-azul", destaque: "Digital", valores: [
+    ["Canal", "2022", "2023", "2024", "BGT 2025"], ["Varejo", 420, 455, 470, 480], ["Atacado", 310, 300, 290, 285],
+    ["Digital", 60, 110, 175, 240], ["Exportação", 90, 95, 105, 115]] },
+  { tipo: "BOL", titulo: "Receita (tamanho) e margem bruta % (cor) por região e trimestre", estilo: "cons-azul", destaque: "Sudeste", valores: [
+    ["Região", "T1", "T2", "T3", "T4", "T1", "T2", "T3", "T4"],
+    ["Sul", 820, 860, 910, 990, 0.31, 0.32, 0.30, 0.33], ["Sudeste", 2100, 2240, 2310, 2480, 0.27, 0.26, 0.28, 0.29],
+    ["Centro-Oeste", 640, 700, 760, 720, 0.35, 0.36, 0.37, 0.34], ["Nordeste", 510, 530, 560, 610, 0.22, 0.24, 0.23, 0.25],
+    ["Norte", 180, 190, 175, 210, 0.18, 0.15, 0.19, 0.21]] },
+  { tipo: "BOL", titulo: "Desvio do EBITDA vs BGT por unidade e mês, R$ mil", estilo: "ibcs", valores: [
+    ["Unidade", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"],
+    ["Unidade A", 120, 80, -40, 60, 150, 90], ["Unidade B", -210, -150, -90, -30, 20, 45],
+    ["Unidade C", 35, -15, 10, 5, -60, -120], ["Unidade D", 260, 190, 240, 310, 280, 330]] },
 ];
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
@@ -75,4 +87,7 @@ export const EXEMPLOS = [
   { demo: 10, estilo: "cinza", descricao: "12. Várias referências – Real x BGT e Real x FC 9+3 lado a lado, na mesma escala" },
   { demo: 9, estilo: "orc-fc", ordem: "fav", titulo: "Receita por cliente – do mais favorável ao mais desfavorável, R$ mil", colunas: { ref: false, ac: true, abs: true, pct: true },
     descricao: "13. Ordenada – clientes do mais favorável ao mais desfavorável, sem a coluna de referência" },
+  { demo: 11, estilo: "cons-azul", destaque: "Digital", descricao: "14. Roscas proporcionais – área = receita do ano; canal destacado e variação da participação em p.p." },
+  { demo: 12, estilo: "cons-azul", destaque: "Sudeste", descricao: "15. Matriz de bolhas – tamanho = receita, cor = faixa de margem % (cabeçalhos repetidos), região destacada" },
+  { demo: 13, estilo: "ibcs", descricao: "16. Matriz de bolhas de desvios – vermelho/verde por faixa, tamanho = tamanho do desvio" },
 ];

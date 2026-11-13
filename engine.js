@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.4.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.5.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -15,6 +15,8 @@ export const TIPOS = {
   COL: { nome: "Colunas", W: 460, H: 280, comTipo: false },
   COMP: { nome: "Comparação", W: 340, H: 260, comTipo: false },
   TAB: { nome: "Tabela de variações", W: 640, H: 0, comTipo: false },
+  ROS: { nome: "Roscas proporcionais", W: 600, H: 260, comTipo: false },
+  BOL: { nome: "Matriz de bolhas", W: 600, H: 0, comTipo: false },
 };
 
 // Anotações que já vêm ligadas em cada tipo de gráfico
@@ -107,6 +109,12 @@ class Tela {
     const w = maxLen * size * 0.6 + 22, h = size * (1.3 * linhas.length + 1);
     const left = ladoEsquerdo ? x : x - w / 2;
     this.p.push({ t: "ellipse", x: left, y: cy - h / 2, w, h, text, size });
+  }
+  // anel entre os raios r0 e r1, do ângulo a0 ao a1 (radianos, 0 = 12h, sentido horário)
+  arco(cx, cy, r0, r1, a0, a1, fill) {
+    if (a1 - a0 <= 1e-4) return;
+    if (a1 - a0 > Math.PI * 1.98) { const m = (a0 + a1) / 2; this.arco(cx, cy, r0, r1, a0, m, fill); this.arco(cx, cy, r0, r1, m, a1, fill); return; }
+    this.p.push({ t: "arco", cx, cy, r0, r1, a0, a1, fill });
   }
   dot(cx, cy, r, color) { this.p.push({ t: "dot", cx, cy, r, color }); }
   marcador(cx, cy, r, n, color) { this.p.push({ t: "marcador", cx, cy, r, n: String(n), color, size: Math.round(r * 1.1) }); }
@@ -222,6 +230,14 @@ export function montarGrafico(dados, spec, estilo) {
     case "TAB": {
       const r = tabela(tela, dados, W, spec);
       altura = r.altura; largura = r.largura;
+      break;
+    }
+    case "ROS":
+      altura = roscas(tela, dados, W, H, spec);
+      break;
+    case "BOL": {
+      const r = bolhas(tela, dados, W, spec);
+      altura = r.altura;
       break;
     }
     default:
@@ -753,6 +769,189 @@ function tabela(tela, d, W, spec) {
   }
   fundo.h = H + 16;
   return { altura: H, largura: larguraTotal };
+}
+
+// ---------------------------- Roscas proporcionais ---------------------------
+// Uma rosca por coluna (ex.: 2023 | 2024 | BGT), fatias = linhas (ex.: segmentos).
+// A ÁREA de cada rosca é proporcional ao total da coluna; a fatia destacada fica
+// na cor do estilo e as demais em cinza; legenda única à esquerda.
+
+// mistura uma cor com branco (t = 0 -> cor, t = 1 -> branco)
+export function clarear(hex, t) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.round(x + (255 - x) * t));
+  return "#" + c.map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+const indiceDestaque = (d, destaque) => (destaque === undefined || destaque === null || destaque === "" ? -1 : d.rot.indexOf(destaque));
+
+function roscas(tela, d, W, H, spec) {
+  const e = tela.e, n = d.nCol, m = d.nLin;
+  const iD = indiceDestaque(d, spec.destaque);
+  const totais = d.cab.map((_, j) => d.rot.reduce((a, _, i) => a + Math.max(0, num(d.v[i][j])), 0));
+  const tMax = Math.max(...totais);
+  if (!(tMax > 0)) throw new Error("As roscas precisam de valores positivos.");
+  tela.fundo(0, 0, W, H);
+  const fundo = tela.p[tela.p.length - 1];
+  let titH = 0;
+  if (spec.titulo) { titH = 24; tela.text(spec.titulo, 0, 0, "top", W, { size: e.fonte + 3, bold: true, align: "left", color: "#000000" }); }
+  // cores: destaque x cinzas, ou a paleta do estilo
+  const cinzas = ["#BFBFBF", "#D9D9D9"];
+  const paleta = e.pilha?.length ? e.pilha : [e.total];
+  const cor = (i) => (iD >= 0 ? (i === iD ? e.total : cinzas[(i < iD ? i : i - 1) % 2]) : paleta[i % paleta.length]);
+  // legenda única
+  const itens = iD >= 0 ? [[d.rot[iD], e.total], ["Demais", cinzas[0]]] : d.rot.map((r, i) => [r, cor(i)]);
+  const legW = Math.min(150, Math.max(70, Math.max(...itens.map(([r]) => r.length)) * e.fonte * 0.56 + 22));
+  const yLeg0 = titH + 14;
+  itens.forEach(([r, c], k) => {
+    const y = yLeg0 + k * (e.fonte * 1.9);
+    tela.rect(0, y, 10, y + 10, c);
+    tela.text(r, 15, y + 5, "middle", legW - 15, { size: e.fonte, align: "left" });
+  });
+  // roscas
+  const colW = (W - legW) / n;
+  const rotH = e.fonte * 1.4 * (iD >= 0 ? 3 : 2) + 8;
+  const rMax = Math.max(12, Math.min(colW / 2 - 36, (H - titH - 16 - rotH) / 2 - 18));
+  const cy = titH + 16 + 18 + rMax;
+  let partAnt = null;
+  d.cab.forEach((nome, j) => {
+    const cx = legW + colW * (j + 0.5), T = totais[j];
+    const r1 = rMax * Math.sqrt(T / tMax), r0 = r1 * 0.58;
+    if (T > 0) {
+      const folga = Math.min(0.03, 1.2 / ((r0 + r1) / 2)); // fresta branca entre as fatias
+      let a = 0;
+      const postos = []; // rótulos já colocados nesta rosca (evita sobreposição)
+      d.rot.forEach((_, i) => {
+        const v = Math.max(0, num(d.v[i][j]));
+        if (!v) return;
+        const ang = (v / T) * 2 * Math.PI;
+        const fatias = d.rot.filter((_, k) => num(d.v[k][j]) > 0).length;
+        tela.arco(cx, cy, r0, r1, a + (fatias > 1 ? folga / 2 : 0), a + ang - (fatias > 1 ? folga / 2 : 0), cor(i));
+        // rótulo de %: só a fatia destacada (ou, sem destaque, as fatias de 6% ou mais)
+        const pct = v / T, meio = a + ang / 2;
+        if ((iD >= 0 && i === iD) || (iD < 0 && pct >= 0.06)) {
+          const rr = r1 + 11, tx = cx + rr * Math.sin(meio);
+          let ty = cy - rr * Math.cos(meio);
+          const dir = Math.sin(meio) >= 0 ? "left" : "right";
+          const passo = Math.cos(meio) > 0 ? -1 : 1; // afasta para fora da rosca
+          for (let k = 0; k < 6 && postos.some(([x, y]) => Math.abs(x - tx) < 26 && Math.abs(y - ty) < e.fonte * 1.25); k++) ty += passo * e.fonte * 0.7;
+          postos.push([tx, ty]);
+          tela.text(fmtPct(pct, 0).replace("+", ""), tx + (dir === "left" ? -2 : 2), ty, "middle", 40,
+            { size: e.fonte, bold: i === iD, align: Math.abs(Math.sin(meio)) < 0.25 ? "center" : dir });
+        }
+        a += ang;
+      });
+    }
+    // total no centro (ou embaixo, se a rosca for pequena demais)
+    const totTxt = fmtNum(T);
+    if (r0 > totTxt.length * e.fonte * 0.33) tela.text(totTxt, cx, cy, "middle", r0 * 2, { size: e.fonte + 1, bold: true });
+    let yRot = cy + rMax + 18;
+    tela.text(nome, cx, yRot, "top", colW - 6, { size: e.fonte + 1, bold: true });
+    yRot += e.fonte * 1.5;
+    if (!(r0 > totTxt.length * e.fonte * 0.33)) { tela.text(totTxt, cx, yRot, "top", colW - 6, { size: e.fonte }); yRot += e.fonte * 1.4; }
+    // participação do destaque e variação em p.p. contra a rosca anterior
+    if (iD >= 0 && T > 0) {
+      const part = Math.max(0, num(d.v[iD][j])) / T;
+      if (partAnt !== null) {
+        const pp = (part - partAnt) * 100;
+        const txt = (pp > 0.05 ? "+" : pp < -0.05 ? "-" : "") + new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(pp)) + " p.p.";
+        tela.text(txt, cx, yRot, "top", colW - 6, { size: e.fonte, italic: true, color: pp > 0.05 ? e.pos : pp < -0.05 ? e.neg : e.texto });
+      }
+      partAnt = part;
+    }
+  });
+  // altura usada (a rosca é limitada pela largura; não sobra espaço vazio embaixo)
+  const usada = Math.min(H, Math.max(cy + rMax + 18 + rotH, yLeg0 + itens.length * e.fonte * 1.9));
+  fundo.h = usada + 16;
+  return usada;
+}
+
+// ---------------------------- Matriz de bolhas --------------------------------
+// Linhas x colunas; área da bolha = volume; cor = faixa. Se os cabeçalhos se
+// repetirem (Jan Fev Mar | Jan Fev Mar), o 1º bloco dá o tamanho e o 2º a cor
+// (ex.: receita e margem %). Uma linha pode ser destacada.
+export function blocosBolhas(d) {
+  const n = d.nCol;
+  if (n % 2 === 0 && n >= 2) {
+    const h = n / 2;
+    if (d.cab.slice(0, h).every((c, j) => String(c).trim().toUpperCase() === String(d.cab[j + h]).trim().toUpperCase()))
+      return { cols: [...Array(h).keys()], corDe: (j) => j + h, separada: true };
+  }
+  return { cols: [...Array(n).keys()], corDe: (j) => j, separada: false };
+}
+
+function bolhas(tela, d, W, spec) {
+  const e = tela.e, m = d.nLin;
+  const { cols, corDe, separada } = blocosBolhas(d);
+  const nc = cols.length, iD = indiceDestaque(d, spec.destaque);
+  const vol = (i, j) => Math.abs(num(d.v[i][j]));
+  const vc = (i, j) => d.v[i][corDe(j)];
+  const vMax = Math.max(...d.rot.flatMap((_, i) => cols.map((j) => vol(i, j)))) || 1;
+  const cores = d.rot.flatMap((_, i) => cols.map((j) => vc(i, j))).filter((x) => x !== null);
+  const cMin = Math.min(...cores), cMax = Math.max(...cores);
+  const ehPct = cores.every((x) => Math.abs(x) <= 1.5) && cores.some((x) => !Number.isInteger(x));
+  const fmtC = (x) => (ehPct ? fmtPct(x, Math.abs(x) >= 0.1 ? 0 : 1).replace("+", "") : fmtNum(x));
+  // faixas: com negativos -> divergente (vermelho/verde); senão 4 faixas iguais na cor do estilo
+  let faixas;
+  if (cMin < 0 && cMax > 0) {
+    const a = Math.max(-cMin, cMax);
+    faixas = [
+      { ate: -a / 2, cor: e.neg }, { ate: 0, cor: clarear(e.neg, 0.55) },
+      { ate: a / 2, cor: clarear(e.pos, 0.5) }, { ate: Infinity, cor: e.pos },
+    ];
+    faixas.forEach((f, k) => (f.rot = k === 0 ? `< ${fmtC(-a / 2)}` : k === 1 ? `${fmtC(-a / 2)} a 0` : k === 2 ? `0 a ${fmtC(a / 2)}` : `> ${fmtC(a / 2)}`));
+  } else {
+    const passo = (cMax - cMin) / 4 || 1;
+    faixas = [0.75, 0.5, 0.25, 0].map((t, k) => ({
+      ate: k === 3 ? Infinity : cMin + passo * (k + 1), cor: clarear(e.total, t),
+      rot: k === 3 ? `> ${fmtC(cMin + passo * 3)}` : `${fmtC(cMin + passo * k)} a ${fmtC(cMin + passo * (k + 1))}`,
+    }));
+  }
+  const corDaFaixa = (x) => (x === null ? "#D9D9D9" : faixas.find((f) => x <= f.ate).cor);
+
+  // layout
+  const tam = e.fonte;
+  const lw = Math.min(180, Math.max(80, Math.max(...d.rot.map((r) => r.length)) * (tam + 1) * 0.56 + 12));
+  const cw = (W - lw) / nc;
+  const rowH = Math.max(26, Math.min(48, cw * 0.55));
+  const rMax = Math.min(rowH / 2 - 2, cw / 2 - 18);
+  let titH = 0;
+  tela.fundo(0, 0, W, 10);
+  const fundo = tela.p[tela.p.length - 1];
+  if (spec.titulo) { titH = 24; tela.text(spec.titulo, 0, 0, "top", W, { size: tam + 3, bold: true, align: "left", color: "#000000" }); }
+  // legenda das faixas
+  const yLeg = titH + 4;
+  let xl = 0;
+  tela.text(separada ? "Cor:" : "Faixas:", xl, yLeg + 6, "middle", 40, { size: tam, align: "left", color: "#595959" });
+  xl += separada ? 26 : 38;
+  faixas.forEach((f) => {
+    tela.dot(xl + 5, yLeg + 6, 5, f.cor);
+    tela.text(f.rot, xl + 13, yLeg + 6, "middle", 90, { size: tam, align: "left" });
+    xl += 13 + f.rot.length * tam * 0.56 + 14;
+  });
+  tela.text("Tamanho = |valor|", W, yLeg + 6, "middle", 120, { size: tam, align: "right", color: "#595959", italic: true });
+  const yCab = yLeg + 22, y0 = yCab + 18;
+  cols.forEach((j, k) => tela.text(d.cab[j], lw + cw * (k + 0.5), yCab, "top", cw - 4, { size: tam, bold: true, color: "#595959" }));
+  tela.line(0, y0 - 2, W, y0 - 2, "#BFBFBF", 0.75);
+  d.rot.forEach((r, i) => {
+    const y = y0 + i * rowH + rowH / 2, dest = i === iD;
+    if (dest) tela.rect(0, y - rowH / 2 + 1, W, y + rowH / 2 - 1, clarear(e.total, 0.88));
+    else if (i > 0) tela.line(0, y - rowH / 2, W, y - rowH / 2, "#EDEDED", 0.75);
+    tela.text(r, 0, y, "middle", lw - 8, { size: tam + 1, bold: dest, align: "left" });
+    cols.forEach((j, k) => {
+      const v = d.v[i][j];
+      if (v === null) return;
+      const cx = lw + cw * k + rMax + 6;
+      const rr = v === 0 ? 0 : Math.max(1.5, rMax * Math.sqrt(vol(i, j) / vMax));
+      if (rr) tela.dot(cx, y, rr, corDaFaixa(vc(i, j)));
+      if (spec.valores !== false) {
+        const txt = separada ? `${fmtNum(v)} · ${vc(i, j) === null ? "–" : fmtC(vc(i, j))}` : fmtNum(v);
+        tela.text(txt, cx + Math.max(rr, 3) + 3, y, "middle", cw - (rr + 8), { size: tam, bold: dest, align: "left", color: "#404040" });
+      }
+    });
+  });
+  const H = y0 + m * rowH + 4;
+  fundo.h = H + 16;
+  return { altura: H };
 }
 
 // ---------------------------- Anotações --------------------------------------

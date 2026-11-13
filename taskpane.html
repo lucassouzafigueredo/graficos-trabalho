@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.4.0">
+<link rel="stylesheet" href="taskpane.css?v=1.5.0">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -65,6 +65,8 @@
       <option value="COL">Colunas</option>
       <option value="COMP">Comparação</option>
       <option value="TAB">Tabela de variações (DRE, BU…)</option>
+      <option value="ROS">Roscas proporcionais</option>
+      <option value="BOL">Matriz de bolhas</option>
     </select>
   </label>
   <label>Título <input id="titulo" placeholder="opcional"></label>
@@ -186,6 +188,15 @@
   <div class="linha"><button id="btnLinhasAuto" class="sec">Voltar todas ao automático</button></div>
 </section>
 
+<section id="secDestaque" hidden>
+  <h2 id="tituloDestaque">Roscas</h2>
+  <p class="muted" id="dicaDestaque"></p>
+  <label>Linha em destaque
+    <select id="destaque"></select>
+  </label>
+  <label class="check" id="lblBolValores"><input type="checkbox" id="bolValores" checked> Mostrar os valores ao lado das bolhas</label>
+</section>
+
 <section id="secAnot">
   <h2>Variações e CAGR</h2>
   <div class="anot" data-k="0">
@@ -233,6 +244,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.4.0"></script>
+<script type="module" src="taskpane.js?v=1.5.0"></script>
 </body>
 </html>
