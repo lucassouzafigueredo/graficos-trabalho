@@ -8,7 +8,7 @@
 // no pior caso, mantém a linha contínua em vez de derrubar o gráfico inteiro.
 // Se algo essencial falhar, as formas parciais são apagadas.
 // =============================================================================
-import { svgHachura } from "./render-svg.js?v=1.0.5";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.0.6";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const HALIGN = { left: "Left", center: "Center", right: "Right" };
@@ -123,20 +123,41 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
     await aplicarComAlternativas(context, tracejadas.dot, (s, v) => (s.lineFormat.dashStyle = v), DASH.dot);
     await aplicarComAlternativas(context, setas, (s, v) => { s.line.endArrowheadStyle = v; }, ["Triangle", "Stealth", "Open"]);
 
-    // ---------------- fase 2b: listras (imagem SVG sobre o retângulo); se o Excel recusar, fica sólido
+    // ---------------- fase 2b: listras. 1º SVG com polígonos; se o Excel recusar, linhas nativas
+    let modoListras = "svg";
     for (const { s: base, p } of listradas) {
+      if (modoListras === "svg") {
+        let img = null;
+        try {
+          img = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
+          pos(img, p.x, p.y, p.w, p.h);
+          img.load("id");
+          await context.sync();
+          criadas.splice(criadas.indexOf(base), 1, img);
+          base.delete();
+          await context.sync();
+          continue;
+        } catch (e) {
+          console.warn("SVG recusado; listras como linhas nativas:", descreverErro(e));
+          if (img) { try { img.delete(); await context.sync(); } catch { /* não chegou a existir */ } }
+          modoListras = "linhas";
+        }
+      }
       try {
-        const img = shapes.addSvg(svgHachura(Math.max(2, Math.round(p.w * 4 / 3)), Math.max(2, Math.round(p.h * 4 / 3)), p.fill, p.listra, p.stroke));
-        pos(img, p.x, p.y, p.w, p.h);
-        img.load("id");
+        const linhas = segmentosListras(p.w, p.h).map(([x1, y1, x2, y2]) => {
+          const l = shapes.addLine(L + p.x + x1, T + p.y + y1, L + p.x + x2, T + p.y + y2, "Straight");
+          l.lineFormat.color = p.listra;
+          l.load("id");
+          return l;
+        });
         await context.sync();
-        criadas.splice(criadas.indexOf(base), 1, img);
-        base.delete();
-        await context.sync();
+        criadas.push(...linhas);
+        await aplicarComAlternativas(context, linhas, (l, v) => (l.lineFormat.weight = v), [ESPESSURA_LISTRA, 2, 1.5]);
       } catch (e) {
-        console.warn("Listras recusadas; barra mantida sólida:", descreverErro(e));
+        console.warn("Listras como linhas recusadas; barra fica sólida:", descreverErro(e));
       }
     }
+    if (listradas.length) console.info("Listras desenhadas como:", modoListras);
 
     // ---------------- fase 3: agrupar e gravar os metadados
     const grupo = shapes.addGroup(criadas.map((s) => s.id));

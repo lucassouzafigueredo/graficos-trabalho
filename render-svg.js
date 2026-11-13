@@ -1,4 +1,5 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
+import { poligonosListras } from "./listras.js?v=1.0.6";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
 let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página
@@ -41,14 +42,13 @@ export function renderSVG(grafico, opts = {}) {
   const partes = prims.map((p) => {
     switch (p.t) {
       case "rect": {
-        let fill = p.fill;
-        if (p.listra) {
-          const id = `${pref}h${defs.length}`;
-          defs += padraoListra(id, p.fill, p.listra);
-          fill = `url(#${id})`;
-        }
         const stroke = p.stroke ? ` stroke="${p.stroke}" stroke-width="1"` : "";
-        return `<rect x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" width="${p.w.toFixed(1)}" height="${p.h.toFixed(1)}" fill="${fill}"${stroke}/>`;
+        const base = `<rect x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" width="${p.w.toFixed(1)}" height="${p.h.toFixed(1)}" fill="${p.fill}"${p.listra ? "" : stroke}/>`;
+        if (!p.listra) return base;
+        const polys = poligonosListras(p.w, p.h).map((poli) =>
+          `<polygon points="${poli.map(([x, y]) => `${(p.x + x).toFixed(1)},${(p.y + y).toFixed(1)}`).join(" ")}" fill="${p.listra}"/>`).join("");
+        const contorno = p.stroke ? `<rect x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" width="${p.w.toFixed(1)}" height="${p.h.toFixed(1)}" fill="none"${stroke}/>` : "";
+        return base + polys + contorno;
       }
       case "line": {
         const marker = p.arrow ? ` marker-end="url(#${pref}seta)"` : "";
@@ -70,18 +70,4 @@ export function renderSVG(grafico, opts = {}) {
   const m = 10;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${largura + 2 * m} ${altura + 2 * m}" ` +
     `width="${opts.width ?? largura + 2 * m}" preserveAspectRatio="xMidYMin meet"><defs>${defs}</defs>${partes.join("")}</svg>`;
-}
-
-// Padrão de listras diagonais: fundo + listra
-function padraoListra(id, fundo, listra) {
-  return `<pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
-    `<rect width="6" height="6" fill="${fundo}"/><line x1="1" y1="0" x2="1" y2="6" stroke="${listra}" stroke-width="2.4"/></pattern>`;
-}
-
-// SVG de um retângulo listrado (o Excel não aceita preenchimento com padrão via API)
-export function svgHachura(w, h, fundo, listra, borda) {
-  const stroke = borda ? ` stroke="${borda}" stroke-width="1"` : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
-    `<defs>${padraoListra("p", fundo, listra)}</defs>` +
-    `<rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" fill="url(#p)"${stroke}/></svg>`;
 }

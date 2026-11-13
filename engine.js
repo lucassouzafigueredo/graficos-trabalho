@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.0.5";
+import { fmtNum, fmtPct } from "./formats.js?v=1.0.6";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
