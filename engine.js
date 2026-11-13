@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.5.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.5.1";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -810,9 +810,11 @@ function roscas(tela, d, W, H, spec) {
   // roscas
   const colW = (W - legW) / n;
   const rotH = e.fonte * 1.4 * (iD >= 0 ? 3 : 2) + 8;
-  const rMax = Math.max(12, Math.min(colW / 2 - 36, (H - titH - 16 - rotH) / 2 - 18));
+  const rMax = Math.max(12, Math.min(colW / 2 - (iD >= 0 && spec.separar !== false ? 39 : 36), (H - titH - 16 - rotH) / 2 - 18));
   const cy = titH + 16 + 18 + rMax;
   let partAnt = null;
+  // total no centro de TODAS as roscas, ou embaixo de todas (nunca misturado)
+  const totNoCentro = totais.every((T) => rMax * Math.sqrt(T / tMax) * 0.58 > fmtNum(T).length * (e.fonte + 1) * 0.3);
   d.cab.forEach((nome, j) => {
     const cx = legW + colW * (j + 0.5), T = totais[j];
     const r1 = rMax * Math.sqrt(T / tMax), r0 = r1 * 0.58;
@@ -825,11 +827,14 @@ function roscas(tela, d, W, H, spec) {
         if (!v) return;
         const ang = (v / T) * 2 * Math.PI;
         const fatias = d.rot.filter((_, k) => num(d.v[k][j]) > 0).length;
-        tela.arco(cx, cy, r0, r1, a + (fatias > 1 ? folga / 2 : 0), a + ang - (fatias > 1 ? folga / 2 : 0), cor(i));
-        // rótulo de %: só a fatia destacada (ou, sem destaque, as fatias de 6% ou mais)
         const pct = v / T, meio = a + ang / 2;
+        // fatia destacada "explodida": deslocada para fora, isolada do resto da rosca
+        const desl = i === iD && spec.separar !== false && fatias > 1 ? Math.max(5, r1 * 0.16) : 0;
+        const ox = desl * Math.sin(meio), oy = -desl * Math.cos(meio);
+        tela.arco(cx + ox, cy + oy, r0, r1, a + (fatias > 1 ? folga / 2 : 0), a + ang - (fatias > 1 ? folga / 2 : 0), cor(i));
+        // rótulo de %: só a fatia destacada (ou, sem destaque, as fatias de 6% ou mais)
         if ((iD >= 0 && i === iD) || (iD < 0 && pct >= 0.06)) {
-          const rr = r1 + 11, tx = cx + rr * Math.sin(meio);
+          const rr = r1 + 11 + desl, tx = cx + rr * Math.sin(meio);
           let ty = cy - rr * Math.cos(meio);
           const dir = Math.sin(meio) >= 0 ? "left" : "right";
           const passo = Math.cos(meio) > 0 ? -1 : 1; // afasta para fora da rosca
@@ -843,11 +848,11 @@ function roscas(tela, d, W, H, spec) {
     }
     // total no centro (ou embaixo, se a rosca for pequena demais)
     const totTxt = fmtNum(T);
-    if (r0 > totTxt.length * e.fonte * 0.33) tela.text(totTxt, cx, cy, "middle", r0 * 2, { size: e.fonte + 1, bold: true });
+    if (totNoCentro) tela.text(totTxt, cx, cy, "middle", r0 * 2, { size: e.fonte + 1, bold: true });
     let yRot = cy + rMax + 18;
     tela.text(nome, cx, yRot, "top", colW - 6, { size: e.fonte + 1, bold: true });
     yRot += e.fonte * 1.5;
-    if (!(r0 > totTxt.length * e.fonte * 0.33)) { tela.text(totTxt, cx, yRot, "top", colW - 6, { size: e.fonte }); yRot += e.fonte * 1.4; }
+    if (!totNoCentro) { tela.text(totTxt, cx, yRot, "top", colW - 6, { size: e.fonte }); yRot += e.fonte * 1.4; }
     // participação do destaque e variação em p.p. contra a rosca anterior
     if (iD >= 0 && T > 0) {
       const part = Math.max(0, num(d.v[iD][j])) / T;

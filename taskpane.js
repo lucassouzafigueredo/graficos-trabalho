@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.5.0";
-import { renderSVG } from "./render-svg.js?v=1.5.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.5.0";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.5.1";
+import { renderSVG } from "./render-svg.js?v=1.5.1";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.5.1";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.5.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.5.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.5.0";
+} from "./styles.js?v=1.5.1";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.5.1";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.5.1";
 
-const VERSAO = "1.5.0";
+const VERSAO = "1.5.1";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -225,6 +225,7 @@ function desenharDestaque() {
   sel.innerHTML = `<option value="">— nenhuma —</option>` + rot.map((r) => `<option>${escHtml(r)}</option>`).join("");
   sel.value = rot.includes(st.spec.destaque) ? st.spec.destaque : "";
   $("bolValores").checked = st.spec.valores !== false;
+  $("rosSeparar").checked = st.spec.separar !== false;
 }
 function mostrarSecoesDoTipo() {
   const t = st.spec.tipo, tab = t === "TAB", dest = t === "ROS" || t === "BOL";
@@ -234,6 +235,7 @@ function mostrarSecoesDoTipo() {
   $("secCores").hidden = tab || dest;
   $("lblAltura").hidden = tab || t === "BOL";
   $("lblBolValores").hidden = t !== "BOL";
+  $("lblSeparar").hidden = t !== "ROS";
   if (dest) { $("tituloDestaque").textContent = DICAS_DESTAQUE[t][0]; $("dicaDestaque").innerHTML = DICAS_DESTAQUE[t][1]; }
 }
 
@@ -301,7 +303,7 @@ function lerForm() {
   lerCoresBarras();
   lerColunasTabela();
   lerLinhasTabela();
-  if (s.tipo === "ROS" || s.tipo === "BOL") { s.destaque = $("destaque").value || undefined; s.valores = $("bolValores").checked; }
+  if (s.tipo === "ROS" || s.tipo === "BOL") { s.destaque = $("destaque").value || undefined; s.valores = $("bolValores").checked; s.separar = $("rosSeparar").checked; }
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
   s.suprimirPct = $("tabSuprimir").checked;
@@ -706,7 +708,7 @@ function ligarEventos() {
   ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros",
     "tabAtual", "tabOrdem", "tabVisRef", "tabVisAc", "tabVisAbs", "tabVisPct"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabRefs").addEventListener("change", reagir);
-  ["destaque", "bolValores"].forEach((id) => $(id).addEventListener("change", reagir));
+  ["destaque", "bolValores", "rosSeparar"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };
