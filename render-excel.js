@@ -11,8 +11,8 @@
 // Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
 // é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.1.0";
-import { renderSVG } from "./render-svg.js?v=1.1.0";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.1.1";
+import { renderSVG } from "./render-svg.js?v=1.1.1";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const SETAS = ["Triangle", "Stealth", "Open"];
@@ -114,11 +114,37 @@ export async function desenharNoExcel(context, sheet, grafico, L, T, meta) {
 export { desenharNoExcel as inserirNoExcel }; // compatibilidade
 
 // ----------------------------------------------------------------- modo Rápido (1 imagem)
+const temFuncao = (obj, nome) => { try { return typeof obj[nome] === "function"; } catch { return false; } };
+
+// Desenha o SVG num canvas do painel e devolve um PNG em base64 (alta resolução)
+export async function svgParaPngBase64(svg, largura, altura, escala = 3) {
+  const img = new Image();
+  await new Promise((ok, falha) => {
+    img.onload = ok;
+    img.onerror = () => falha(new Error("Não foi possível gerar a imagem do gráfico."));
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  });
+  const c = document.createElement("canvas");
+  c.width = Math.round(largura * escala); c.height = Math.round(altura * escala);
+  const g = c.getContext("2d");
+  g.fillStyle = "#FFFFFF"; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/png").split(",")[1];
+}
+
 async function inserirComoImagem(context, sheet, grafico, L, T, meta) {
   const svg = renderSVG(grafico, { margem: MARGEM });
-  const s = sheet.shapes.addSvg(svg);
-  s.left = L - MARGEM; s.top = T - MARGEM;
-  s.width = grafico.largura + 2 * MARGEM; s.height = grafico.altura + 2 * MARGEM;
+  const W = grafico.largura + 2 * MARGEM, H = grafico.altura + 2 * MARGEM;
+  let s;
+  if (temFuncao(sheet.shapes, "addSvg") && conhecido("imagem") !== "png") {
+    s = sheet.shapes.addSvg(svg);
+  } else if (temFuncao(sheet.shapes, "addImage")) {
+    s = sheet.shapes.addImage(await svgParaPngBase64(svg, W, H));
+    if (conhecido("imagem") !== "png") { cap.ok.imagem = "png"; gravarCap(); }
+  } else {
+    throw new Error("Esta versão do Excel não permite inserir imagens pelo add-in.");
+  }
+  s.left = L - MARGEM; s.top = T - MARGEM; s.width = W; s.height = H;
   return await finalizar(context, s, meta);
 }
 
@@ -150,7 +176,9 @@ async function inserirComFormas(context, sheet, grafico, L, T, meta, usarMemoria
   };
   const peso = (s, w) => detalhe(`peso:${w}`, s, (x, v) => (x.lineFormat.weight = v), [...new Set([w, Math.ceil(w), 1])]);
   const pos = (s, x, y, w, h) => { s.left = L + x; s.top = T + y; s.width = Math.max(0.75, w); s.height = Math.max(0.75, h); };
-  const modoListras = usarMemoria ? conhecido("listras") : undefined;
+  const svgDisponivel = temFuncao(shapes, "addSvg");
+  let modoListras = usarMemoria ? conhecido("listras") : undefined;
+  if (!svgDisponivel) modoListras = "linhas"; // Excel sem addSvg: listras sempre como linhas nativas
   const listradas = [];
   const linhasDeListra = (p) => segmentosListras(p.w, p.h).map(([x1, y1, x2, y2]) => {
     const l = shapes.addLine(L + p.x + x1, T + p.y + y1, L + p.x + x2, T + p.y + y2, "Straight");
@@ -226,20 +254,21 @@ async function inserirComFormas(context, sheet, grafico, L, T, meta, usarMemoria
 
     // ---------------- fase 2b: listras ainda sem modo conhecido -> testa SVG (todas de uma vez)
     if (listradas.length) {
-      const imgs = listradas.map(({ p }) => {
-        const img = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
-        pos(img, p.x, p.y, p.w, p.h);
-        img.load("id");
-        return img;
-      });
+      let imgs = [];
       try {
+        imgs = listradas.map(({ p }) => {
+          const img = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
+          pos(img, p.x, p.y, p.w, p.h);
+          img.load("id");
+          return img;
+        });
         await context.sync();
         listradas.forEach(({ s }, i) => { criadas.splice(criadas.indexOf(s), 1, imgs[i]); s.delete(); });
         await context.sync();
         cap.ok.listras = "svg"; gravarCap();
       } catch (e) {
         console.warn("SVG recusado; listras como linhas nativas:", descreverErro(e));
-        try { imgs.forEach((i) => i.delete()); await context.sync(); } catch { /* não chegaram a existir */ }
+        if (imgs.length) { try { imgs.forEach((i) => i.delete()); await context.sync(); } catch { /* não chegaram a existir */ } }
         const linhas = listradas.flatMap(({ p }) => linhasDeListra(p));
         linhas.forEach((l) => l.load("id"));
         try {

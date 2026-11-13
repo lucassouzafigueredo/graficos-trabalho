@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.1.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.1.1";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -460,7 +460,7 @@ function anotacoes(tela, anot, estiloIBCS, xR) {
   anot.v.forEach((a) => {
     if (!a.on) return;
     const i = ix(a.de, nb), j = ix(a.para, nb);
-    if (i !== j) indicador(tela, tela.barras[i - 1], tela.barras[j - 1], i > j, a, estiloIBCS, xs);
+    if (i !== j) indicador(tela, tela.barras[i - 1], tela.barras[j - 1], i > j, a, estiloIBCS, xs, i - 1, j - 1);
     xs += larguraVar(a);
   });
   if (anot.cagr.on) linhaCAGR(tela, ix(anot.cagr.de, nb), ix(anot.cagr.para, nb));
@@ -475,7 +475,22 @@ function textoVariacao(va, vb, modo) {
   return pct || abs;
 }
 
-function indicador(tela, A, B, aDireita, a, estiloIBCS, xs) {
+// Onde a linha de referência (na altura y) pode começar sem atravessar barras ou rótulos
+// das barras à direita da barra de origem
+function inicioLinha(tela, idx, y) {
+  const labelH = (tela.e.fonte + 6) * 1.5;
+  let x = tela.barras[idx].cx + tela.bw / 2;
+  for (let k = idx + 1; k < tela.barras.length; k++) {
+    const b = tela.barras[k];
+    const y0 = tela.Y(tela.clip(0)), yn = tela.Y(tela.clip(b.nivel));
+    let topo = Math.min(y0, yn), base = Math.max(y0, yn);
+    if (b.nivel >= 0) topo -= labelH; else base += labelH;
+    if (y >= topo - 1 && y <= base + 1) x = b.cx + tela.bw / 2;
+  }
+  return x;
+}
+
+function indicador(tela, A, B, aDireita, a, estiloIBCS, xs, ia, ib) {
   const e = tela.e;
   const ya = tela.Y(tela.clip(A.nivel)), yb = tela.Y(tela.clip(B.nivel));
   if (estiloIBCS) {
@@ -486,8 +501,8 @@ function indicador(tela, A, B, aDireita, a, estiloIBCS, xs) {
     tela.dot(xs, ya, 2.5, "#000000");
     tela.dot(xs, yb, 2.5, "#000000");
   } else {
-    tela.line(A.cx + tela.bw / 2, ya, xs + 10, ya, e.texto, 1, { dash: "dash" });
-    tela.line(B.cx + tela.bw / 2, yb, xs + 10, yb, e.texto, 1, { dash: "dash" });
+    tela.line(inicioLinha(tela, ia, ya), ya, xs + 10, ya, e.texto, 1, { dash: "dash" });
+    tela.line(inicioLinha(tela, ib, yb), yb, xs + 10, yb, e.texto, 1, { dash: "dash" });
     tela.arrow(xs, ya, xs, yb, "#000000", 1.75);
   }
   const txt = textoVariacao(A.valor, B.valor, a.modo);
