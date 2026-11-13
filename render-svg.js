@@ -1,5 +1,5 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
-import { poligonosListras } from "./listras.js?v=1.0.8";
+import { poligonosListras } from "./listras.js?v=1.1.0";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
 let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página
@@ -51,9 +51,17 @@ export function renderSVG(grafico, opts = {}) {
         return base + polys + contorno;
       }
       case "line": {
-        const marker = p.arrow ? ` marker-end="url(#${pref}seta)"` : "";
+        // seta desenhada como triângulo (o Office não suporta <marker> em SVG)
+        let { x1, y1, x2, y2 } = p, cabeca = "";
+        if (p.arrow) {
+          const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len, uy = dy / len, comp = Math.min(8, len * 0.6), larg = 3.5 + p.w;
+          const bx = x2 - ux * comp, by = y2 - uy * comp;
+          cabeca = `<polygon points="${x2.toFixed(1)},${y2.toFixed(1)} ${(bx - uy * larg).toFixed(1)},${(by + ux * larg).toFixed(1)} ${(bx + uy * larg).toFixed(1)},${(by - ux * larg).toFixed(1)}" fill="${p.color}"/>`;
+          x2 = bx + ux * 0.5; y2 = by + uy * 0.5;
+        }
         const dash = DASH[p.dash] ? ` stroke-dasharray="${DASH[p.dash]}"` : "";
-        return `<line x1="${p.x1.toFixed(1)}" y1="${p.y1.toFixed(1)}" x2="${p.x2.toFixed(1)}" y2="${p.y2.toFixed(1)}" stroke="${p.color}" stroke-width="${p.w}"${dash}${marker}/>`;
+        return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${p.color}" stroke-width="${p.w}"${dash}/>` + cabeca;
       }
       case "text":
         return textoSVG(p, fonte);
@@ -66,8 +74,9 @@ export function renderSVG(grafico, opts = {}) {
         return "";
     }
   });
-  defs += `<marker id="${pref}seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>`;
-  const m = 10;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${largura + 2 * m} ${altura + 2 * m}" ` +
-    `width="${opts.width ?? largura + 2 * m}" preserveAspectRatio="xMidYMin meet"><defs>${defs}</defs>${partes.join("")}</svg>`;
+  const m = opts.margem ?? 10;
+  const W = largura + 2 * m, H = altura + 2 * m;
+  const tam = opts.width ? `width="${opts.width}"` : `width="${W}" height="${H}"`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${W} ${H}" ${tam} preserveAspectRatio="xMidYMin meet">` +
+    (defs ? `<defs>${defs}</defs>` : "") + partes.join("") + `</svg>`;
 }

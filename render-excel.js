@@ -1,18 +1,24 @@
 // =============================================================================
-// Desenha as primitivas do motor como formas nativas do Excel (ExcelApi 1.9)
-// e agrupa tudo num único objeto, com os metadados no Texto Alt.
+// Desenha o gráfico no Excel (ExcelApi 1.9). Dois modos:
 //
-// Robustez: o desenho é feito em fases. A fase 1 (formas, cores, textos) usa só
-// propriedades básicas. Os detalhes (tracejado, pontas de seta) vêm depois, cada
-// um com alternativas: se a versão do Excel recusar um valor, tenta o próximo e,
-// no pior caso, mantém a linha contínua em vez de derrubar o gráfico inteiro.
-// Se algo essencial falhar, as formas parciais são apagadas.
+//  • "imagem" (Rápido): o gráfico inteiro vira UMA imagem vetorial (SVG). Uma única
+//    ida e volta ao Excel. No PowerPoint dá para desagrupar com "Converter em Forma".
+//  • "formas" (Editável): cada barra/texto/linha é uma forma nativa, agrupadas.
+//
+// Desempenho do modo "formas": cada ida e volta ao Excel (context.sync) é cara. O
+// add-in memoriza o que a versão do Excel do usuário aceita (espessuras, tracejados,
+// setas, SVG) e, a partir do 2º gráfico, aplica tudo já na primeira ida e volta.
+// Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
+// é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.0.8";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.1.0";
+import { renderSVG } from "./render-svg.js?v=1.1.0";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
+const SETAS = ["Triangle", "Stealth", "Open"];
 const HALIGN = { left: "Left", center: "Center", right: "Right" };
 const VALIGN = { top: "Top", middle: "Middle", bottom: "Bottom" };
+const MARGEM = 8; // o fundo branco do gráfico começa 8 pt antes do quadro
 export const PREFIXO = "GFPA_";
 
 // Descreve um erro do Office.js com o local exato (ex.: "ShapeLineFormat.dashStyle")
@@ -21,6 +27,102 @@ export function descreverErro(e) {
   return (e && e.message ? e.message : String(e)) + (local ? ` [${local}]` : "");
 }
 
+// ----------------------------------------------------------------- memória do que o Excel aceita
+const CHAVE_CAP = "gfpa.capacidades.v1";
+function lerCap() {
+  try { const c = JSON.parse(localStorage.getItem(CHAVE_CAP)); if (c && c.ok && c.ruim) return c; } catch { /* vazio */ }
+  return { ok: {}, ruim: {} };
+}
+let cap = lerCap();
+function gravarCap() { try { localStorage.setItem(CHAVE_CAP, JSON.stringify(cap)); } catch { /* sem armazenamento */ } }
+export function esquecerCapacidades() { cap = { ok: {}, ruim: {} }; gravarCap(); }
+const conhecido = (chave) => cap.ok[chave];
+
+// Tenta valores alternativos (cada tentativa = 1 ida e volta) e memoriza o resultado
+async function aplicarComAlternativas(context, alvos, aplicar, alternativas, chave) {
+  if (!alvos.length) return;
+  const ruins = new Set(cap.ruim[chave] ?? []);
+  for (const valor of alternativas.filter((v) => !ruins.has(String(v)))) {
+    try {
+      alvos.forEach((a) => aplicar(a, valor));
+      await context.sync();
+      cap.ok[chave] = valor; gravarCap();
+      return;
+    } catch (e) {
+      console.warn("Valor recusado pelo Excel:", chave, valor, descreverErro(e));
+      (cap.ruim[chave] ??= []).push(String(valor)); gravarCap();
+    }
+  }
+}
+
+// ----------------------------------------------------------------- metadados
+function lerMetaDoArquivo(nome) {
+  try { return Office.context.document.settings.get("gfpa:" + nome); } catch { return null; }
+}
+function salvarMetaNoArquivo(nome, meta) {
+  return new Promise((ok) => {
+    try {
+      const cfg = Office.context.document.settings;
+      cfg.set("gfpa:" + nome, meta);
+      cfg.saveAsync(() => ok());
+    } catch { ok(); }
+  });
+}
+
+// Grava nome + Texto Alt (+ posicionamento) numa forma/grupo e devolve o id
+async function finalizar(context, forma, meta) {
+  const nome = PREFIXO + Date.now() + Math.floor(Math.random() * 1000);
+  forma.name = nome;
+  if (conhecido("alt") === true) {
+    forma.altTextDescription = JSON.stringify(meta);
+    forma.placement = "Move";
+    forma.load("id");
+    try { await context.sync(); return forma.id; } catch { esquecerCapacidades(); forma.name = nome; }
+  }
+  forma.load("id");
+  await context.sync();
+  try {
+    forma.altTextDescription = JSON.stringify(meta);
+    await context.sync();
+    cap.ok.alt = true; gravarCap();
+  } catch (e) {
+    console.warn("Texto Alt recusado, usando as configurações do arquivo:", descreverErro(e));
+    cap.ok.alt = false; gravarCap();
+    await salvarMetaNoArquivo(nome, meta);
+  }
+  try { forma.placement = "Move"; await context.sync(); } catch { /* opcional */ }
+  return forma.id;
+}
+
+// ----------------------------------------------------------------- ponto de entrada
+export async function desenharNoExcel(context, sheet, grafico, L, T, meta) {
+  const modo = meta?.spec?.modo ?? "formas";
+  if (modo === "imagem") {
+    try { return await inserirComoImagem(context, sheet, grafico, L, T, meta); }
+    catch (e) { console.warn("Imagem recusada; desenhando com formas:", descreverErro(e)); }
+  }
+  try { return await inserirComFormas(context, sheet, grafico, L, T, meta, true); }
+  catch (e) {
+    // a memória pode estar desatualizada (ex.: Excel atualizado): apaga e tenta de novo
+    if (Object.keys(cap.ok).length || Object.keys(cap.ruim).length) {
+      esquecerCapacidades();
+      return await inserirComFormas(context, sheet, grafico, L, T, meta, false);
+    }
+    throw e;
+  }
+}
+export { desenharNoExcel as inserirNoExcel }; // compatibilidade
+
+// ----------------------------------------------------------------- modo Rápido (1 imagem)
+async function inserirComoImagem(context, sheet, grafico, L, T, meta) {
+  const svg = renderSVG(grafico, { margem: MARGEM });
+  const s = sheet.shapes.addSvg(svg);
+  s.left = L - MARGEM; s.top = T - MARGEM;
+  s.width = grafico.largura + 2 * MARGEM; s.height = grafico.altura + 2 * MARGEM;
+  return await finalizar(context, s, meta);
+}
+
+// ----------------------------------------------------------------- modo Editável (formas)
 function prepararTexto(s, p, fonte) {
   const tf = s.textFrame;
   tf.autoSizeSetting = "AutoSizeNone";
@@ -32,57 +134,58 @@ function prepararTexto(s, p, fonte) {
   f.bold = !!p.bold; f.italic = !!p.italic;
 }
 
-// Tenta aplicar um valor com alternativas; cada tentativa é sincronizada isoladamente
-async function aplicarComAlternativas(context, alvos, aplicar, alternativas) {
-  if (!alvos.length) return;
-  for (const valor of alternativas) {
-    try {
-      alvos.forEach((a) => aplicar(a, valor));
-      await context.sync();
-      return;
-    } catch (e) {
-      console.warn("Valor recusado pelo Excel:", valor, descreverErro(e));
-    }
-  }
-}
-
-/**
- * @param sheet    planilha de destino
- * @param grafico  resultado de montarGrafico()
- * @param L,T      canto superior esquerdo do quadro (pontos)
- * @param meta     objeto gravado no Texto Alt do grupo (JSON)
- * @returns id do grupo criado
- */
-export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte = "Segoe UI") {
+async function inserirComFormas(context, sheet, grafico, L, T, meta, usarMemoria, fonte = "Segoe UI") {
   const shapes = sheet.shapes;
   const criadas = [];
-  const tracejadas = { dash: [], dot: [] };
-  const setas = [];
-  const listradas = []; // retângulos que recebem listras (SVG) na fase 2b
-  const pesos = new Map(); // espessura -> formas (aplicadas na fase 2)
-  const peso = (s, w) => { if (!pesos.has(w)) pesos.set(w, []); pesos.get(w).push(s); };
+  // detalhes cujo valor aceito ainda não é conhecido (resolvidos na fase 2)
+  const pendentes = new Map(); // chave -> { alvos, aplicar, alternativas }
+  const pendente = (chave, alvo, aplicar, alternativas) => {
+    if (!pendentes.has(chave)) pendentes.set(chave, { alvos: [], aplicar, alternativas });
+    pendentes.get(chave).alvos.push(alvo);
+  };
+  // aplica já (se a memória souber o valor aceito) ou deixa para a fase 2
+  const detalhe = (chave, alvo, aplicar, alternativas) => {
+    const v = usarMemoria ? conhecido(chave) : undefined;
+    if (v !== undefined) aplicar(alvo, v); else pendente(chave, alvo, aplicar, alternativas);
+  };
+  const peso = (s, w) => detalhe(`peso:${w}`, s, (x, v) => (x.lineFormat.weight = v), [...new Set([w, Math.ceil(w), 1])]);
   const pos = (s, x, y, w, h) => { s.left = L + x; s.top = T + y; s.width = Math.max(0.75, w); s.height = Math.max(0.75, h); };
+  const modoListras = usarMemoria ? conhecido("listras") : undefined;
+  const listradas = [];
+  const linhasDeListra = (p) => segmentosListras(p.w, p.h).map(([x1, y1, x2, y2]) => {
+    const l = shapes.addLine(L + p.x + x1, T + p.y + y1, L + p.x + x2, T + p.y + y2, "Straight");
+    l.lineFormat.color = p.listra;
+    detalhe("peso:listra", l, (x, v) => (x.lineFormat.weight = v), [ESPESSURA_LISTRA, 2, 1.5]);
+    return l;
+  });
 
   try {
-    // ---------------- fase 1: formas, cores e textos
+    // ---------------- fase 1: tudo o que já se sabe que o Excel aceita, numa única ida e volta
     for (const p of grafico.prims) {
       let s;
       switch (p.t) {
         case "rect":
-          // listrado: primeiro um retângulo sólido (cor de fundo); as listras entram na fase 2b
+          if (p.listra && modoListras === "svg") {
+            s = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
+            pos(s, p.x, p.y, p.w, p.h);
+            break;
+          }
           s = shapes.addGeometricShape("Rectangle");
           s.fill.setSolidColor(p.fill);
           if (p.stroke) { s.lineFormat.color = p.stroke; peso(s, 1); } else s.lineFormat.visible = false;
-          if (p.listra) listradas.push({ s, p });
           pos(s, p.x, p.y, p.w, p.h);
+          if (p.listra) {
+            if (modoListras === "linhas") { criadas.push(s); criadas.push(...linhasDeListra(p)); continue; }
+            listradas.push({ s, p });
+          }
           break;
         case "line":
           if (Math.hypot(p.x2 - p.x1, p.y2 - p.y1) < 0.2) continue;
           s = shapes.addLine(L + p.x1, T + p.y1, L + p.x2, T + p.y2, "Straight");
           s.lineFormat.color = p.color;
           peso(s, p.w);
-          if (p.dash === "dash" || p.dash === "dot") tracejadas[p.dash].push(s);
-          if (p.arrow) setas.push(s);
+          if (p.dash === "dash" || p.dash === "dot") detalhe(p.dash, s, (x, v) => (x.lineFormat.dashStyle = v), DASH[p.dash]);
+          if (p.arrow) detalhe("seta", s, (x, v) => { x.line.endArrowheadStyle = v; }, SETAS);
           break;
         case "text":
           if (!p.text) continue;
@@ -115,70 +218,45 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
     criadas.forEach((s) => s.load("id"));
     await context.sync();
 
-    // ---------------- fase 2: detalhes (com alternativas; nunca derrubam o gráfico)
-    for (const [w, lista] of pesos) {
-      await aplicarComAlternativas(context, lista, (s, v) => (s.lineFormat.weight = v), [...new Set([w, Math.ceil(w), 1])]);
+    // ---------------- fase 2: só o que ainda não se sabe (1ª vez neste Excel)
+    for (const [chave, t] of pendentes) {
+      if (chave === "peso:listra") continue; // resolvido junto com as listras
+      await aplicarComAlternativas(context, t.alvos, t.aplicar, t.alternativas, chave);
     }
-    await aplicarComAlternativas(context, tracejadas.dash, (s, v) => (s.lineFormat.dashStyle = v), DASH.dash);
-    await aplicarComAlternativas(context, tracejadas.dot, (s, v) => (s.lineFormat.dashStyle = v), DASH.dot);
-    await aplicarComAlternativas(context, setas, (s, v) => { s.line.endArrowheadStyle = v; }, ["Triangle", "Stealth", "Open"]);
 
-    // ---------------- fase 2b: listras. 1º SVG com polígonos; se o Excel recusar, linhas nativas
-    let modoListras = "svg";
-    for (const { s: base, p } of listradas) {
-      if (modoListras === "svg") {
-        let img = null;
-        try {
-          img = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
-          pos(img, p.x, p.y, p.w, p.h);
-          img.load("id");
-          await context.sync();
-          criadas.splice(criadas.indexOf(base), 1, img);
-          base.delete();
-          await context.sync();
-          continue;
-        } catch (e) {
-          console.warn("SVG recusado; listras como linhas nativas:", descreverErro(e));
-          if (img) { try { img.delete(); await context.sync(); } catch { /* não chegou a existir */ } }
-          modoListras = "linhas";
-        }
-      }
+    // ---------------- fase 2b: listras ainda sem modo conhecido -> testa SVG (todas de uma vez)
+    if (listradas.length) {
+      const imgs = listradas.map(({ p }) => {
+        const img = shapes.addSvg(svgListrado(p.w, p.h, p.fill, p.listra, p.stroke));
+        pos(img, p.x, p.y, p.w, p.h);
+        img.load("id");
+        return img;
+      });
       try {
-        const linhas = segmentosListras(p.w, p.h).map(([x1, y1, x2, y2]) => {
-          const l = shapes.addLine(L + p.x + x1, T + p.y + y1, L + p.x + x2, T + p.y + y2, "Straight");
-          l.lineFormat.color = p.listra;
-          l.load("id");
-          return l;
-        });
         await context.sync();
-        criadas.push(...linhas);
-        await aplicarComAlternativas(context, linhas, (l, v) => (l.lineFormat.weight = v), [ESPESSURA_LISTRA, 2, 1.5]);
+        listradas.forEach(({ s }, i) => { criadas.splice(criadas.indexOf(s), 1, imgs[i]); s.delete(); });
+        await context.sync();
+        cap.ok.listras = "svg"; gravarCap();
       } catch (e) {
-        console.warn("Listras como linhas recusadas; barra fica sólida:", descreverErro(e));
+        console.warn("SVG recusado; listras como linhas nativas:", descreverErro(e));
+        try { imgs.forEach((i) => i.delete()); await context.sync(); } catch { /* não chegaram a existir */ }
+        const linhas = listradas.flatMap(({ p }) => linhasDeListra(p));
+        linhas.forEach((l) => l.load("id"));
+        try {
+          await context.sync();
+          criadas.push(...linhas);
+          cap.ok.listras = "linhas"; gravarCap();
+        } catch (e2) { console.warn("Listras recusadas; barras sólidas:", descreverErro(e2)); }
       }
     }
-    if (listradas.length) console.info("Listras desenhadas como:", modoListras);
+    const pl = pendentes.get("peso:listra");
+    if (pl) await aplicarComAlternativas(context, pl.alvos, pl.aplicar, pl.alternativas, "peso:listra");
 
     // ---------------- fase 3: agrupar e gravar os metadados
     const grupo = shapes.addGroup(criadas.map((s) => s.id));
-    const nome = PREFIXO + Date.now();
-    grupo.name = nome;
-    grupo.load("id");
-    await context.sync();
     criadas.length = 0; // a partir daqui as formas pertencem ao grupo
-    try {
-      grupo.altTextDescription = JSON.stringify(meta);
-      await context.sync();
-    } catch (e) {
-      // Texto Alt recusado (ex.: limite de tamanho): guarda as configurações no próprio arquivo
-      console.warn("Texto Alt recusado, usando as configurações do arquivo:", descreverErro(e));
-      await salvarMetaNoArquivo(nome, meta);
-      try { grupo.altTextDescription = "GFPA"; await context.sync(); } catch { /* opcional */ }
-    }
-    try { grupo.placement = "Move"; await context.sync(); } catch { /* opcional */ }
-    return grupo.id;
+    return await finalizar(context, grupo, meta);
   } catch (e) {
-    // apaga o que foi desenhado pela metade
     try {
       for (const s of criadas) { try { s.delete(); } catch { /* já removida */ } }
       await context.sync();
@@ -187,31 +265,34 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
   }
 }
 
-// Configurações guardadas no arquivo (Office document settings), por nome do grupo
-function lerMetaDoArquivo(nome) {
-  try { return Office.context.document.settings.get("gfpa:" + nome); } catch { return null; }
-}
-function salvarMetaNoArquivo(nome, meta) {
-  return new Promise((ok) => {
-    try {
-      const cfg = Office.context.document.settings;
-      cfg.set("gfpa:" + nome, meta);
-      cfg.saveAsync(() => ok());
-    } catch { ok(); }
-  });
+// ----------------------------------------------------------------- listagem
+function extrair(sheetName, s, out) {
+  if (!s.name.startsWith(PREFIXO)) return;
+  let meta = null;
+  try { meta = JSON.parse(s.altTextDescription); } catch { meta = lerMetaDoArquivo(s.name); }
+  if (meta && meta.gfpa) out.push({ id: s.id, left: s.left, top: s.top, meta, sheet: sheetName });
 }
 
 // Lista os gráficos do add-in numa planilha
 export async function listarGraficos(context, sheet) {
-  const shapes = sheet.shapes;
-  shapes.load("items/id,items/name,items/altTextDescription,items/left,items/top");
+  sheet.shapes.load("items/id,items/name,items/altTextDescription,items/left,items/top");
   await context.sync();
   const out = [];
-  for (const s of shapes.items) {
-    if (!s.name.startsWith(PREFIXO)) continue;
-    let meta = null;
-    try { meta = JSON.parse(s.altTextDescription); } catch { meta = lerMetaDoArquivo(s.name); }
-    if (meta && meta.gfpa) out.push({ id: s.id, left: s.left, top: s.top, meta });
-  }
+  sheet.shapes.items.forEach((s) => extrair(undefined, s, out));
   return out;
+}
+
+// Lista os gráficos de TODAS as abas em 2 idas e voltas (não importa quantas abas)
+export async function listarGraficosTodas(context) {
+  const wss = context.workbook.worksheets;
+  wss.load("items/name,items/id");
+  await context.sync();
+  wss.items.forEach((ws) => ws.shapes.load("items/id,items/name,items/altTextDescription,items/left,items/top"));
+  await context.sync();
+  const out = [], abas = {};
+  wss.items.forEach((ws) => {
+    abas[ws.id] = ws.name;
+    ws.shapes.items.forEach((s) => extrair(ws.name, s, out));
+  });
+  return { graficos: out, abas };
 }

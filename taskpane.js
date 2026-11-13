@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.0.8";
-import { renderSVG } from "./render-svg.js?v=1.0.8";
-import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.8";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.1.0";
+import { renderSVG } from "./render-svg.js?v=1.1.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.1.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.8";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.8";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.0.8";
+} from "./styles.js?v=1.1.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.1.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.1.0";
 
-const VERSAO = "1.0.8";
+const VERSAO = "1.1.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -19,7 +19,7 @@ const st = {
   noExcel: false,
   fonte: null,          // { sheet, address, tabela, autoLinhas }
   valores: null, textos: null, dados: null,
-  spec: { tipo: "IBCS", titulo: "", corte: 0, W: TIPOS.IBCS.W, H: TIPOS.IBCS.H, anot: anotacoesPadrao("IBCS") },
+  spec: { tipo: "IBCS", titulo: "", corte: 0, W: TIPOS.IBCS.W, H: TIPOS.IBCS.H, anot: anotacoesPadrao("IBCS"), modo: null },
   editando: null,       // item da lista de gráficos sendo editado
   estiloGrafico: null,  // estilo gravado no gráfico (quando não existe mais na lista)
   graficos: [], abas: {},
@@ -95,6 +95,12 @@ function estiloDoEditor() {
 }
 
 
+
+// ----------------------------------------------------------------- modo de desenho
+const CHAVE_MODO = "gfpa.modoDesenho";
+function modoPadrao() { try { return localStorage.getItem(CHAVE_MODO) || "imagem"; } catch { return "imagem"; } }
+function lembrarModo(m) { try { localStorage.setItem(CHAVE_MODO, m); } catch { /* sem armazenamento */ } }
+
 // ----------------------------------------------------------------- cores das barras
 const MODOS_BARRA = [
   ["auto", "Automática"], ["real", "Como Real"], ["orc", "Como Orçamento"],
@@ -161,6 +167,8 @@ function escreverForm() {
   $("corte").value = s.corte ? s.corte : "";
   $("lblCorte").hidden = s.tipo !== "EMP";
   $("largura").value = s.W; $("altura").value = s.H;
+  const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
+  document.querySelectorAll("input[name=modoDesenho]").forEach((r) => (r.checked = r.value === modo));
   if (st.fonte) { $("endereco").value = `${st.fonte.sheet}!${st.fonte.address}`; $("autoLinhas").checked = st.fonte.autoLinhas !== false; }
   document.querySelectorAll(".anot[data-k]").forEach((el) => {
     const a = s.anot.v[+el.dataset.k];
@@ -184,6 +192,7 @@ function lerForm() {
   s.corte = Math.abs(parseFloat($("corte").value)) || 0;
   s.W = Math.max(150, +$("largura").value || TIPOS[s.tipo].W);
   s.H = Math.max(100, +$("altura").value || TIPOS[s.tipo].H);
+  s.modo = document.querySelector("input[name=modoDesenho]:checked")?.value ?? "imagem";
   document.querySelectorAll(".anot[data-k]").forEach((el) => {
     const a = s.anot.v[+el.dataset.k];
     a.on = el.querySelector(".on").checked;
@@ -315,7 +324,7 @@ async function redesenhar(ctx, item, meta) {
   const dados = lerDados(r.values, r.text, TIPOS[meta.spec.tipo].comTipo);
   const g = montarGrafico(dados, meta.spec, meta.estilo);
   const ws = ctx.workbook.worksheets.getItem(item.sheet);
-  const novoId = await inserirNoExcel(ctx, ws, g, item.left + 8, item.top + 8, meta);
+  const novoId = await desenharNoExcel(ctx, ws, g, item.left + 8, item.top + 8, meta);
   ws.shapes.getItem(item.id).delete();
   await ctx.sync();
   return novoId;
@@ -332,7 +341,7 @@ async function inserir() {
     const estilo = estiloAtual();
     const g = montarGrafico(dados, st.spec, estilo);
     const ws = ctx.workbook.worksheets.getItem(st.fonte.sheet);
-    idNovo = await inserirNoExcel(ctx, ws, g, r.left + r.width + 30, r.top + 8, montarMeta(st.fonte, st.spec, estilo));
+    idNovo = await desenharNoExcel(ctx, ws, g, r.left + r.width + 30, r.top + 8, montarMeta(st.fonte, st.spec, estilo));
   });
   await recarregarLista(idNovo);
   msg("Gráfico inserido. Ele está na lista acima para edição.", "ok");
@@ -352,15 +361,8 @@ async function aplicar() {
 async function recarregarLista(selecionarId) {
   if (!st.noExcel) return;
   await Excel.run(async (ctx) => {
-    const wss = ctx.workbook.worksheets;
-    wss.load("items/name,items/id");
-    await ctx.sync();
-    st.graficos = []; st.abas = {};
-    for (const ws of wss.items) {
-      st.abas[ws.id] = ws.name;
-      const lista = await listarGraficos(ctx, ws);
-      lista.forEach((x) => st.graficos.push({ ...x, sheet: ws.name }));
-    }
+    const r = await listarGraficosTodas(ctx); // 2 idas e voltas, com qualquer número de abas
+    st.graficos = r.graficos; st.abas = r.abas;
   });
   const sel = $("listaGraficos");
   sel.innerHTML = '<option value="">— novo gráfico —</option>';
@@ -462,9 +464,10 @@ async function gerarExemplos() {
         tipo: demo.tipo, titulo: demo.titulo, corte: ex.corte ?? demo.corte ?? 0,
         W: TIPOS[demo.tipo].W, H: TIPOS[demo.tipo].H,
         anot: ex.anot ? clone(ex.anot) : anotacoesPadrao(demo.tipo), barras: ex.barras ?? {},
+        modo: modoPadrao(),
       };
       const g = montarGrafico(dados, spec, estilo);
-      await inserirNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
+      await desenharNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
       total++;
       // próximo bloco abaixo do gráfico (linhas de ~15 pt) e sempre depois dos dados
       linha = Math.max(r0 + nl + 2, linha + Math.ceil((g.altura + 40) / 15));
@@ -590,6 +593,7 @@ function ligarEventos() {
   $("cagrDe").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
   $("cagrPara").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
 
+  document.querySelectorAll("input[name=modoDesenho]").forEach((r) => r.addEventListener("change", () => { lembrarModo(r.value); reagir(); }));
   $("coresBarras").addEventListener("input", reagir);
   $("coresBarras").addEventListener("change", reagir);
   $("btnCoresAuto").onclick = () => { st.spec.barras = {}; desenharCoresBarras(); preview(); };
