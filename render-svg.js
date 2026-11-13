@@ -1,5 +1,5 @@
 // Renderiza as primitivas do motor como SVG (pré-visualização no painel)
-import { poligonosListras } from "./listras.js?v=1.1.3";
+import { poligonosListras } from "./listras.js?v=1.2.0";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const DASH = { solid: "", dash: "4 3", dot: "1 2" };
 let contadorSVG = 0; // ids únicos entre vários SVGs na mesma página

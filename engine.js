@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.1.3";
+import { fmtNum, fmtPct } from "./formats.js?v=1.2.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -14,6 +14,7 @@ export const TIPOS = {
   EMP: { nome: "Cascata empilhada", W: 520, H: 320, comTipo: true },
   COL: { nome: "Colunas", W: 460, H: 280, comTipo: false },
   COMP: { nome: "Comparação", W: 340, H: 260, comTipo: false },
+  TAB: { nome: "Tabela de variações", W: 640, H: 0, comTipo: false },
 };
 
 // Anotações que já vêm ligadas em cada tipo de gráfico
@@ -211,6 +212,9 @@ export function montarGrafico(dados, spec, estilo) {
       break;
     case "COMP":
       comparacao(tela, dados, W, H, spec.titulo, anot);
+      break;
+    case "TAB":
+      altura = tabela(tela, dados, W, spec);
       break;
     default:
       throw new Error("Tipo de gráfico desconhecido: " + spec.tipo);
@@ -450,6 +454,147 @@ function comparacao(tela, d, W, H, titulo, anot) {
   });
   tela.line(xL, tela.Y(0), xR, tela.Y(0), "#404040", 0.75);
   anotacoes(tela, anot, false, xR);
+}
+
+
+// ---------------------------- Tabela de variações (estilo IBCS) ---------------
+// Dados: Conta | Referência (BGT/FC/PY) | Atual. Colunas desenhadas:
+//   referência (número) | atual (barra) | Δ absoluta (barra) | Δ % (alfinete)
+// Cada linha pode ser: invertida (custo: queda é favorável), resultado (subtotal),
+// negrito ou oculta. O padrão vem do nome da conta e pode ser corrigido no painel.
+
+const normalizar = (t) => String(t).toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const RX_CUSTO = /(^|[^A-Z])(CPV|CMV|CSP|CUSTOS?|DESPESAS?|DEDUC(AO|OES)|PDD|PERDAS?|IMPOSTOS?|TRIBUTOS?|IR\s*\/?\s*CS|IRPJ|CSLL|D\s*&\s*A|DEPRECIAC|AMORTIZAC|SG\s*&\s*A|OPEX|COGS|TAXES?|EXPENSES?|COSTS?)([^A-Z]|$)/;
+const RX_RESULTADO = /^(\W*)(LUCRO|PREJUIZO|EBITDA|EBIT|MARGEM|RECEITA LIQUIDA|RESULTADO (OPERACIONAL|LIQUIDO|ANTES|DO EXERCICIO|BRUTO)|TOTAL|GROSS PROFIT|OPERATING PROFIT|NET (PROFIT|INCOME|SALES))/;
+
+export function flagsAutomaticas(rotulo, ref, ac) {
+  const r = normalizar(rotulo);
+  const res = RX_RESULTADO.test(r);
+  // só inverte se o custo estiver lançado positivo (se já vier negativo, o sinal resolve)
+  const inv = !res && RX_CUSTO.test(r) && (ref > 0 || ac > 0);
+  return { inv, res, neg: res, ocultar: false };
+}
+
+export function flagsLinha(spec, rotulo, ref, ac) {
+  return { ...flagsAutomaticas(rotulo, ref, ac), ...(spec?.linhas?.[rotulo] ?? {}) };
+}
+
+// Unidade única para a tabela inteira (automática: pelo maior valor)
+export function unidadeTabela(spec, valores) {
+  if (spec?.unidade && spec.unidade !== "auto") return { unidade: spec.unidade, casas: spec.casas, sufixo: "" };
+  const max = Math.max(0, ...valores.map(Math.abs));
+  const inteiros = valores.every((v) => Number.isInteger(v));
+  if (max < 1e5) return { unidade: "un", casas: spec?.casas ?? (inteiros ? 0 : 1), sufixo: "" };
+  if (max < 1e8) return { unidade: "mil", casas: spec?.casas ?? 1, sufixo: "K" };
+  return { unidade: "mi", casas: spec?.casas ?? 1, sufixo: "M" };
+}
+
+export function fmtTab(v, spec, comSinal = false) {
+  const u = spec?.unidade ?? "un";
+  const div = { un: 1, mil: 1e3, mi: 1e6, bi: 1e9 }[u] ?? 1;
+  const casas = spec?.casas ?? (u === "un" ? 0 : 1);
+  const s = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }).format(Math.abs(v) / div) + (spec?.sufixo ?? "");
+  if (v < 0 && /[1-9]/.test(s)) return "-" + s;
+  if (comSinal && v > 0) return "+" + s;
+  return s;
+}
+
+function tabela(tela, d, W, spec) {
+  const e = tela.e;
+  if (d.nCol < 2) throw new Error("A tabela precisa de duas colunas numéricas: Referência (ex.: BGT) e Atual (ex.: Real).");
+  const refNome = d.cab[0] || "Ref", acNome = d.cab[1] || "AC";
+  const linhas = d.rot.map((r, i) => {
+    const ref = num(d.v[i][0]), ac = num(d.v[i][1]);
+    return { r, ref, ac, dv: ac - ref, pct: ref !== 0 ? (ac - ref) / Math.abs(ref) : null, f: flagsLinha(spec, r, ref, ac) };
+  }).filter((l) => !l.f.ocultar);
+  if (!linhas.length) throw new Error("Todas as linhas estão ocultas.");
+  const un = unidadeTabela(spec, linhas.flatMap((l) => [l.ref, l.ac, l.dv]));
+  const fmt = (v, sinal) => fmtTab(v, un, sinal);
+  const fav = (l) => (l.f.inv ? l.dv <= 0 : l.dv >= 0);
+
+  // ----- layout
+  const tam = e.fonte + 1, rowH = Math.round(tam * 2.4);
+  let titH = 0;
+  tela.fundo(0, 0, W, 10);
+  const fundo = tela.p[tela.p.length - 1];
+  if (spec.titulo) {
+    titH = 30;
+    tela.text(spec.titulo, 0, 0, "top", W, { size: e.fonte + 3, bold: true, align: "left", color: "#000000" });
+    tela.line(0, 21, W, 21, "#000000", 0.75);
+  }
+  const cabH = 22, y0 = titH + cabH, H = y0 + linhas.length * rowH + 6;
+  fundo.h = H + 16;
+  const maxRot = Math.max(...linhas.map((l) => l.r.length));
+  const lw = Math.min(220, Math.max(90, maxRot * tam * 0.56 + 14));
+  const refW = 64, resto = W - lw - refW;
+  const acW = resto * 0.38, dW = resto * 0.32, pW = resto - acW - dW;
+  const xRef = lw, xAc = lw + refW, xD = xAc + acW, xP = xD + dW;
+  const yLinha = (i) => y0 + i * rowH + rowH / 2;
+  const barH = rowH * 0.62;
+  const cinzaEixo = "#8C8C8C";
+
+  // ----- escalas
+  const acMin = Math.min(0, ...linhas.map((l) => l.ac)), acMax = Math.max(0, ...linhas.map((l) => l.ac));
+  const acI1 = xAc + (acMin < 0 ? 46 : 6), acI2 = xAc + acW - 46;
+  const xA = (v) => acI1 + ((v - acMin) / ((acMax - acMin) || 1)) * (acI2 - acI1);
+  const dMax = Math.max(...linhas.map((l) => Math.abs(l.dv))) || 1;
+  const dC = xD + dW / 2, dR = dW / 2 - 44;
+  const pcts = linhas.filter((l) => l.pct !== null).map((l) => Math.abs(l.pct));
+  let pMax = Math.max(0, ...pcts) || 1;
+  if (spec.suprimirPct !== false && pcts.length > 2) {
+    // valores muito acima dos demais viram seta no limite (não achatam a coluna)
+    const ord = [...pcts].sort((a, b) => a - b), med = ord[Math.floor(ord.length / 2)] || ord[ord.length - 1];
+    const normais = ord.filter((x) => x <= Math.max(med * 4, 0.05));
+    if (normais.length) pMax = Math.max(...normais) || pMax;
+  }
+  const pC = xP + pW / 2, pR = pW / 2 - 40;
+
+  // ----- cabeçalhos
+  const cab = { size: e.fonte, color: "#595959" };
+  tela.text(refNome, xRef + refW - 6, titH + 4, "top", refW, { ...cab, align: "right" });
+  tela.line(xRef + 14, titH + 18, xRef + refW - 4, titH + 18, "#A6A6A6", 2);
+  tela.text(acNome, xA(0) + 4, titH + 4, "top", 80, { ...cab, align: "left" });
+  tela.text("Δ" + refNome, dC, titH + 4, "top", dW, cab);
+  tela.text("Δ" + refNome + "%", pC, titH + 4, "top", pW, { ...cab, italic: true });
+
+  // ----- linhas
+  linhas.forEach((l, i) => {
+    const y = yLinha(i), bold = l.f.neg || l.f.res;
+    if (l.f.res && i > 0) tela.line(0, y - rowH / 2, W, y - rowH / 2, "#BFBFBF", 0.75);
+    const pref = l.f.inv && !/^\s*[(\-–]/.test(l.r) ? "– " : l.f.res ? "= " : "";
+    tela.text(pref + l.r, 0, y, "middle", lw - 8, { size: tam, bold, align: "left" });
+    tela.text(fmt(l.ref), xRef + refW - 6, y, "middle", refW, { size: tam, bold, align: "right", color: "#404040" });
+    // atual: barra
+    const a0 = xA(0), a1 = xA(l.ac);
+    tela.rect(Math.min(a0, a1), y - barH / 2, Math.max(0.75, Math.abs(a1 - a0)), y + barH / 2, l.f.res ? e.total : e.total);
+    if (l.ac >= 0) tela.text(fmt(l.ac), a1 + 4, y, "middle", 60, { size: tam, bold, align: "left" });
+    else tela.text(fmt(l.ac), a1 - 4, y, "middle", 60, { size: tam, bold, align: "right" });
+    // Δ absoluta
+    const cor = fav(l) ? e.pos : e.neg;
+    const dx = (l.dv / dMax) * dR;
+    if (l.dv !== 0) tela.rect(Math.min(dC, dC + dx), y - barH / 2, Math.max(0.75, Math.abs(dx)), y + barH / 2, cor);
+    if (l.dv >= 0) tela.text(fmt(l.dv, true), dC + Math.max(dx, 0) + 4, y, "middle", 60, { size: tam, bold, align: "left" });
+    else tela.text(fmt(l.dv, true), dC + dx - 4, y, "middle", 60, { size: tam, bold, align: "right" });
+    // Δ %: alfinete (seta quando passa da escala)
+    if (l.pct === null) { tela.text("–", pC + 6, y, "middle", 30, { size: tam, align: "left", color: "#808080" }); return; }
+    const fora = Math.abs(l.pct) > pMax * 1.0001;
+    const px = Math.sign(l.pct) * Math.min(Math.abs(l.pct) / pMax, 1) * pR;
+    const txtP = fmtPct(l.pct, Math.abs(l.pct) >= 1 ? 0 : 1);
+    if (fora) tela.arrow(pC, y, pC + px + Math.sign(px) * 6, y, cor, 2);
+    else {
+      if (Math.abs(px) > 0.5) tela.line(pC, y, pC + px, y, cor, 2);
+      tela.dot(pC + px, y, 3, "#262626");
+    }
+    const xt = pC + px + Math.sign(px || 1) * (fora ? 10 : 6);
+    tela.text(txtP, xt, y, "middle", 60, { size: tam, bold, italic: true, align: px < 0 ? "right" : "left" });
+  });
+
+  // ----- eixos verticais
+  const yA = y0 - 2, yB = y0 + linhas.length * rowH + 2;
+  tela.line(xA(0), yA, xA(0), yB, cinzaEixo, 1.5);
+  tela.line(dC, yA, dC, yB, cinzaEixo, 1.5);
+  tela.line(pC, yA, pC, yB, cinzaEixo, 1.5);
+  return H;
 }
 
 // ---------------------------- Anotações --------------------------------------

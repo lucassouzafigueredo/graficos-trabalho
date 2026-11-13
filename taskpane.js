@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.1.3";
-import { renderSVG } from "./render-svg.js?v=1.1.3";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.1.3";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha } from "./engine.js?v=1.2.0";
+import { renderSVG } from "./render-svg.js?v=1.2.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.2.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.1.3";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.1.3";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.1.3";
+} from "./styles.js?v=1.2.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.2.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.2.0";
 
-const VERSAO = "1.1.3";
+const VERSAO = "1.2.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -153,6 +153,43 @@ function lerCoresBarras() {
   st.spec.barras = out;
 }
 
+
+// ----------------------------------------------------------------- linhas da tabela (tipo TAB)
+const FLAGS = ["inv", "res", "neg", "ocultar"];
+function desenharLinhasTabela() {
+  const box = $("linhasTabela");
+  if (!st.dados || st.spec.tipo !== "TAB") { box.innerHTML = ""; return; }
+  box.innerHTML = st.dados.rot.map((r, i) => {
+    const f = flagsLinha(st.spec, r, st.dados.v[i][0] ?? 0, st.dados.v[i][1] ?? 0);
+    const cls = (f.ocultar ? " oculta" : "") + (f.res ? " res" : "");
+    return `<div class="linha-tab${cls}" data-rot="${escHtml(r)}" data-i="${i}"><span class="rot" title="${escHtml(r)}">${escHtml(r)}</span>` +
+      FLAGS.map((k) => `<input type="checkbox" data-k="${k}"${f[k] ? " checked" : ""}>`).join("") + `</div>`;
+  }).join("");
+}
+function lerLinhasTabela() {
+  if (st.spec.tipo !== "TAB") return;
+  const out = { ...(st.spec.linhas ?? {}) };
+  document.querySelectorAll("#linhasTabela .linha-tab").forEach((el) => {
+    const marc = {};
+    el.querySelectorAll("input").forEach((c) => (marc[c.dataset.k] = c.checked));
+    const i = +el.dataset.i, rot = el.dataset.rot;
+    const auto = flagsLinha({}, rot, st.dados.v[i][0] ?? 0, st.dados.v[i][1] ?? 0);
+    const dif = {};
+    FLAGS.forEach((k) => { if (marc[k] !== auto[k]) dif[k] = marc[k]; });
+    if (Object.keys(dif).length) out[rot] = dif; else delete out[rot];
+    el.classList.toggle("oculta", marc.ocultar);
+    el.classList.toggle("res", marc.res);
+  });
+  st.spec.linhas = out;
+}
+function mostrarSecoesDoTipo() {
+  const tab = st.spec.tipo === "TAB";
+  $("secTabela").hidden = !tab;
+  $("secAnot").hidden = tab;
+  $("secCores").hidden = tab;
+  $("lblAltura").hidden = tab;
+}
+
 // ----------------------------------------------------------------- formulário
 function opcoesBarras(select, valor) {
   const rot = st.dados ? st.dados.rot : [];
@@ -166,6 +203,11 @@ function escreverForm() {
   $("titulo").value = s.titulo ?? "";
   $("corte").value = s.corte ? s.corte : "";
   $("lblCorte").hidden = s.tipo !== "EMP";
+  mostrarSecoesDoTipo();
+  $("tabUnidade").value = s.unidade ?? "auto";
+  $("tabCasas").value = s.casas ?? "";
+  $("tabSuprimir").checked = s.suprimirPct !== false;
+  desenharLinhasTabela();
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => (r.checked = r.value === modo));
@@ -203,6 +245,10 @@ function lerForm() {
     el.classList.toggle("desligada", !a.on);
   });
   lerCoresBarras();
+  lerLinhasTabela();
+  s.unidade = $("tabUnidade").value;
+  s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
+  s.suprimirPct = $("tabSuprimir").checked;
   s.anot.cagr = { on: $("cagrOn").checked, de: +$("cagrDe").value || 1, para: +$("cagrPara").value || 0 };
   $("anotCagr").classList.toggle("desligada", !s.anot.cagr.on);
   if (st.fonte) st.fonte.autoLinhas = $("autoLinhas").checked;
@@ -594,6 +640,9 @@ function ligarEventos() {
   $("cagrPara").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
 
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => r.addEventListener("change", () => { lembrarModo(r.value); reagir(); }));
+  ["tabUnidade", "tabCasas", "tabSuprimir"].forEach((id) => $(id).addEventListener("change", reagir));
+  $("linhasTabela").addEventListener("change", reagir);
+  $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };
   $("coresBarras").addEventListener("input", reagir);
   $("coresBarras").addEventListener("change", reagir);
   $("btnCoresAuto").onclick = () => { st.spec.barras = {}; desenharCoresBarras(); preview(); };

@@ -67,3 +67,11 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border
 .cor-barra .amostra { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; border: 1px solid #ccc; }
 .cor-barra .pers { display: flex; gap: 8px; align-items: center; margin-top: 5px; font-size: 12px; }
 .cor-barra .pers label { margin: 0; display: flex; gap: 4px; align-items: center; color: var(--texto); }
+
+.linhas-cab, .linha-tab { display: grid; grid-template-columns: 1fr 44px 44px 40px 46px; align-items: center; gap: 2px; }
+.linhas-cab { font-size: 11px; color: var(--muted); border-bottom: 1px solid #e6e6e6; padding: 4px 0; margin-top: 6px; }
+.linhas-cab span:not(:first-child), .linha-tab input { justify-self: center; }
+.linha-tab { padding: 3px 0; border-bottom: 1px solid #f3f3f3; font-size: 12px; }
+.linha-tab .rot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linha-tab.oculta .rot { color: #aaa; text-decoration: line-through; }
+.linha-tab.res .rot { font-weight: 600; }

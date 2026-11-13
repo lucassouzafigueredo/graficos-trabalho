@@ -26,6 +26,12 @@ export const DEMOS = [
   { tipo: "COL", titulo: "Receita – Orçamento x Forecast", estilo: "orc-fc", semCagr: true, valores: [
     ["Cenário", "Receita"], ["LY", 1180], ["BGT", 1057], ["6+6", 993], ["9+3", 989]] },
   { tipo: "COMP", titulo: "EBITDA, R$ mi", valores: [["Ano", "EBITDA"], [2023, 13.7], [2024, 15.0]] },
+  { tipo: "TAB", titulo: "DRE – Real x Orçamento, R$ mil", estilo: "cinza", valores: [
+    ["Conta", "BGT", "Real"],
+    ["Receita bruta", 12500, 13100], ["Deduções", 2100, 2250], ["Receita líquida", 10400, 10850],
+    ["CPV", 6200, 6650], ["Lucro bruto", 4200, 4200], ["Despesas comerciais", 1100, 1020],
+    ["Despesas administrativas", 900, 960], ["EBITDA", 2200, 2220], ["D&A", 400, 410],
+    ["Resultado financeiro", -300, -380], ["IR/CS", 510, 480], ["Lucro líquido", 990, 950]] },
 ];
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
@@ -48,4 +54,5 @@ export const EXEMPLOS = [
     barras: { LY: { modo: "cor", fill: "#7F7F7F", listrado: false } },
     descricao: "7. Orçamento x Forecast – cenário reconhecido pelo nome; LY com cor escolhida em Cores das barras" },
   { demo: 7, estilo: "cons-azul", descricao: "8. Comparação – seta e balão de variação entre dois períodos" },
+  { demo: 8, estilo: "cinza", descricao: "9. Tabela de variações – DRE Real x BGT: custos invertidos (queda = verde), subtotais destacados, Δ e Δ% por linha" },
 ];

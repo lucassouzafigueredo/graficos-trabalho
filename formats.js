@@ -20,6 +20,7 @@ export function fmtNum(v, comSinal = false) {
 export function fmtPct(p, casas) {
   const nf = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
   const s = nf.format(Math.abs(p) * 100) + "%";
+  if (!/[1-9]/.test(s)) return s; // arredondou para zero: sem sinal
   if (p > 0) return "+" + s;
   if (p < 0) return "-" + s;
   return s;
