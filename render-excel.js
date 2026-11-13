@@ -11,8 +11,8 @@
 // Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
 // é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.1.1";
-import { renderSVG } from "./render-svg.js?v=1.1.1";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.1.2";
+import { renderSVG } from "./render-svg.js?v=1.1.2";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const SETAS = ["Triangle", "Stealth", "Open"];

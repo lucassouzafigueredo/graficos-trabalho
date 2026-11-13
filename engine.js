@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.1.1";
+import { fmtNum, fmtPct } from "./formats.js?v=1.1.2";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -475,19 +475,37 @@ function textoVariacao(va, vb, modo) {
   return pct || abs;
 }
 
-// Onde a linha de referência (na altura y) pode começar sem atravessar barras ou rótulos
-// das barras à direita da barra de origem
-function inicioLinha(tela, idx, y) {
-  const labelH = (tela.e.fonte + 6) * 1.5;
-  let x = tela.barras[idx].cx + tela.bw / 2;
+// Linha de referência tracejada que sai da barra de origem (idx) até xFim, na altura y.
+// Ela é interrompida só onde passaria por cima de um rótulo de valor ou do corpo de
+// outra barra, e continua logo depois, mantendo a ligação visual com a barra comparada.
+function linhaReferencia(tela, idx, y, xFim, cor) {
+  const e = tela.e, tam = e.fonte + 6, folga = 3;
+  const x0 = tela.barras[idx].cx + tela.bw / 2;
+  const bloqueios = [];
   for (let k = idx + 1; k < tela.barras.length; k++) {
     const b = tela.barras[k];
     const y0 = tela.Y(tela.clip(0)), yn = tela.Y(tela.clip(b.nivel));
-    let topo = Math.min(y0, yn), base = Math.max(y0, yn);
-    if (b.nivel >= 0) topo -= labelH; else base += labelH;
-    if (y >= topo - 1 && y <= base + 1) x = b.cx + tela.bw / 2;
+    // corpo da barra
+    if (y > Math.min(y0, yn) + 0.5 && y < Math.max(y0, yn) - 0.5)
+      bloqueios.push([b.cx - tela.bw / 2 - folga, b.cx + tela.bw / 2 + folga]);
+    // rótulo de valor (acima da barra positiva, abaixo da negativa)
+    const larg = String(fmtNum(b.valor)).length * tam * 0.6 + 8;
+    const [rTopo, rBase] = b.nivel >= 0 ? [yn - tam * 1.45, yn] : [yn, yn + tam * 1.45];
+    if (y >= rTopo - 1 && y <= rBase + 1) bloqueios.push([b.cx - larg / 2 - folga, b.cx + larg / 2 + folga]);
   }
-  return x;
+  // balões, textos e setas de variações já desenhadas
+  for (const [bx1, bx2, by1, by2] of tela.caixasAnot ?? [])
+    if (y >= by1 - 1 && y <= by2 + 1) bloqueios.push([bx1 - folga, bx2 + folga]);
+  // subtrai os bloqueios do trecho [x0, xFim]
+  bloqueios.sort((p, q) => p[0] - q[0]);
+  let x = x0;
+  for (const [a, z] of bloqueios) {
+    if (z <= x) continue;
+    if (a >= xFim) break;
+    if (a - x > 4) tela.line(x, y, Math.min(a, xFim), y, cor, 1, { dash: "dash" });
+    x = Math.max(x, z);
+  }
+  if (xFim - x > 4) tela.line(x, y, xFim, y, cor, 1, { dash: "dash" });
 }
 
 function indicador(tela, A, B, aDireita, a, estiloIBCS, xs, ia, ib) {
@@ -501,13 +519,19 @@ function indicador(tela, A, B, aDireita, a, estiloIBCS, xs, ia, ib) {
     tela.dot(xs, ya, 2.5, "#000000");
     tela.dot(xs, yb, 2.5, "#000000");
   } else {
-    tela.line(inicioLinha(tela, ia, ya), ya, xs + 10, ya, e.texto, 1, { dash: "dash" });
-    tela.line(inicioLinha(tela, ib, yb), yb, xs + 10, yb, e.texto, 1, { dash: "dash" });
+    linhaReferencia(tela, ia, ya, xs + 10, e.texto);
+    linhaReferencia(tela, ib, yb, xs + 10, e.texto);
     tela.arrow(xs, ya, xs, yb, "#000000", 1.75);
   }
+  const caixas = (tela.caixasAnot ??= []);
+  caixas.push([xs - 4, xs + 4, Math.min(ya, yb), Math.max(ya, yb)]); // seta / barra vertical
   const txt = textoVariacao(A.valor, B.valor, a.modo);
+  const n0 = tela.p.length;
   if (a.balao) tela.ellipse(txt, xs + 10, (ya + yb) / 2, true);
   else tela.text(txt, xs + 8, (ya + yb) / 2, "middle", 84, { size: e.fonte + 1, italic: true, align: "left" });
+  const q = tela.p[n0];
+  const largTxt = q.t === "ellipse" ? q.w : Math.max(...String(txt).split("\n").map((l) => l.length)) * q.size * 0.6;
+  caixas.push([q.x, q.x + largTxt, q.y, q.y + q.h]);
 }
 
 function linhaCAGR(tela, a, b) {
