@@ -60,3 +60,10 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border
 
 .cores.desligada { opacity: .45; }
 #estCenariosBox label input + input { margin-left: -4px; }
+
+.cor-barra { border-bottom: 1px solid #f0f0f0; padding: 5px 0; }
+.cor-barra .topo { display: grid; grid-template-columns: 1fr 150px; gap: 6px; align-items: center; }
+.cor-barra .rot { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cor-barra .amostra { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -2px; margin-right: 6px; border: 1px solid #ccc; }
+.cor-barra .pers { display: flex; gap: 8px; align-items: center; margin-top: 5px; font-size: 12px; }
+.cor-barra .pers label { margin: 0; display: flex; gap: 4px; align-items: center; color: var(--texto); }

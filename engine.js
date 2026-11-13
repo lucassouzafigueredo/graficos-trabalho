@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.0.6";
+import { fmtNum, fmtPct } from "./formats.js?v=1.0.7";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -128,14 +128,45 @@ export function cenarioDe(rotulo) {
   return "real";
 }
 
-// Lista com a aparência de cada barra (ou null = aparência padrão do gráfico)
-function aparencias(e, rotulos) {
-  if (!e.cenarios) return rotulos.map(() => null);
+// Aparências por cenário usadas quando o estilo não define as suas
+export const CENARIOS_PADRAO = {
+  real: { fill: "#A9CBF5" },
+  orc: { fill: "#4F8DF0", listra: "#9DC1F7" },
+  fc: [{ fill: "#26408F", listra: "#6F8BD3" }, { fill: "#111A4A", listra: "#4C5E9E" }],
+};
+
+// Aparência escolhida pelo usuário para uma barra (painel > Cores das barras)
+//   { modo: "auto" | "real" | "orc" | "fc1" | "fc2" | "cor", fill, listrado, listra }
+function aparenciaEscolhida(e, esc) {
+  if (!esc || !esc.modo || esc.modo === "auto") return null;
+  const cen = e.cenarios ?? CENARIOS_PADRAO;
+  switch (esc.modo) {
+    case "real": return { ...cen.real };
+    case "orc": return { ...cen.orc };
+    case "fc1": return { ...cen.fc[0] };
+    case "fc2": return { ...(cen.fc[1] ?? cen.fc[0]) };
+    case "cor": return esc.listrado ? { fill: esc.fill, listra: esc.listra } : { fill: esc.fill };
+    default: return null;
+  }
+}
+
+// Só as escolhas explícitas do usuário (índice -> aparência ou null)
+function escolhidas(e, rotulos, escolhas) {
+  return rotulos.map((r) => aparenciaEscolhida(e, escolhas?.[r]));
+}
+
+// Aparência de cada barra: escolha do usuário > cenário do estilo > null (padrão do gráfico)
+export function aparencias(e, rotulos, escolhas) {
+  const esc = escolhidas(e, rotulos, escolhas);
   let nFc = 0;
-  return rotulos.map((r) => {
-    const c = cenarioDe(r);
-    if (c === "fc") { const lista = e.cenarios.fc; return { ...lista[Math.min(nFc++, lista.length - 1)] }; }
-    return { ...e.cenarios[c] };
+  return rotulos.map((r, i) => {
+    let auto = null;
+    if (e.cenarios) {
+      const c = cenarioDe(r);
+      if (c === "fc") { const lista = e.cenarios.fc; auto = { ...lista[Math.min(nFc++, lista.length - 1)] }; }
+      else auto = { ...e.cenarios[c] };
+    }
+    return esc[i] ?? auto;
   });
 }
 const rectAparencia = (tela, bx, ya, bw, yb, ap) => tela.rect(bx, ya, bw, yb, ap.fill, { listra: ap.listra, stroke: ap.stroke });
@@ -159,6 +190,7 @@ const reservaTopo = (anot) => (anot.cagr.on ? 48 : 0);
 // -----------------------------------------------------------------------------
 export function montarGrafico(dados, spec, estilo) {
   const tela = new Tela(estilo);
+  tela.escolhas = spec.barras ?? {};
   const anot = spec.anot ?? anotacoesPadrao(spec.tipo);
   const W = spec.W ?? TIPOS[spec.tipo].W, H = spec.H ?? TIPOS[spec.tipo].H;
   let largura = W, altura = H;
@@ -218,7 +250,8 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
   const xL = L + 2, xR = L + W - 2 - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.66;
   tela.iniciarBarras(bw);
-  const ap = aparencias(e, d.rot);
+  const ap = aparencias(e, d.rot, tela.escolhas);
+  const esc = escolhidas(e, d.rot, tela.escolhas);
   const rotulo = (txt, acima, cx, i) => acima
     ? tela.text(txt, cx, tela.Y(hi[i]) - 2, "bottom", catW + 16, { size: e.fonte + 1 })
     : tela.text(txt, cx, tela.Y(lo[i]) + 2, "top", catW + 16, { size: e.fonte + 1 });
@@ -234,7 +267,8 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
       rotulo(fmtNum(fim), fim >= 0, cx, i);
     } else {
       const dv = ac[i] - ac[i - 1];
-      tela.rect(bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), dv >= 0 ? e.pos : e.neg);
+      if (esc[i]) rectAparencia(tela, bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), esc[i]);
+      else tela.rect(bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), dv >= 0 ? e.pos : e.neg);
       if (dv !== 0) rotulo(fmtNum(dv, true), dv >= 0, cx, i);
     }
     if (i < n - 1) tela.line(bx + bw, tela.Y(ac[i]), bx + catW, tela.Y(ac[i]), "#AFAFAF", 0.75);
@@ -301,7 +335,7 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
   const C = (v) => tela.clip(v), Y = (v) => tela.Y(v);
   const fmtDelta = (v) => (e.sinalDelta ? fmtNum(v, true) : fmtNum(Math.abs(v)));
   let legOk = false;
-  const ap = aparencias(e, d.rot);
+  const ap = aparencias(e, d.rot, tela.escolhas);
 
   for (let i = 0; i < n; i++) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
@@ -314,8 +348,10 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
       if (quebraInf) tela.quebra(bx, bw, Y(tela.vMin) - Math.min(22, (Y(tela.vMin) - Y(C(hi[i]))) * 0.35));
     };
     if (tp[i] === "D") {
-      const cor = e.porSinal ? (tot[i] >= 0 ? e.pos : e.neg) : e.delta;
-      tela.rect(bx, Y(C(lo[i])), bw, Y(C(hi[i])), cor);
+      const escD = escolhidas(e, [d.rot[i]], tela.escolhas)[0];
+      const cor = escD ? escD.fill : e.porSinal ? (tot[i] >= 0 ? e.pos : e.neg) : e.delta;
+      if (escD) rectAparencia(tela, bx, Y(C(lo[i])), bw, Y(C(hi[i])), escD);
+      else tela.rect(bx, Y(C(lo[i])), bw, Y(C(hi[i])), cor);
       desenharQuebras();
       const txt = fmtDelta(tot[i]);
       if (quebraSup || quebraInf)
@@ -369,7 +405,7 @@ function colunas(tela, d, W, H, titulo, anot) {
   const xL = 0, xR = W - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.62;
   tela.iniciarBarras(bw);
-  const ap = aparencias(e, d.rot);
+  const ap = aparencias(e, d.rot, tela.escolhas);
   for (let i = 0; i < n; i++) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, tot[i], tot[i]);
@@ -403,7 +439,7 @@ function comparacao(tela, d, W, H, titulo, anot) {
   const xL = 0, xR = W - margemDireita(anot);
   const catW = (xR - xL) / n, bw = catW * 0.6;
   tela.iniciarBarras(bw);
-  const ap = aparencias(e, d.rot);
+  const ap = aparencias(e, d.rot, tela.escolhas);
   vals.forEach((v, i) => {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, v, v);

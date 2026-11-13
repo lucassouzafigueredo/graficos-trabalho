@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao } from "./engine.js?v=1.0.6";
-import { renderSVG } from "./render-svg.js?v=1.0.6";
-import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.6";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias } from "./engine.js?v=1.0.7";
+import { renderSVG } from "./render-svg.js?v=1.0.7";
+import { inserirNoExcel, listarGraficos, descreverErro } from "./render-excel.js?v=1.0.7";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.0.6";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.6";
-import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.6";
+} from "./styles.js?v=1.0.7";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.0.7";
+import { DEMOS, textos as textosDemo } from "./demo.js?v=1.0.7";
 
-const VERSAO = "1.0.6";
+const VERSAO = "1.0.7";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -94,6 +94,59 @@ function estiloDoEditor() {
   };
 }
 
+
+// ----------------------------------------------------------------- cores das barras
+const MODOS_BARRA = [
+  ["auto", "Automática"], ["real", "Como Real"], ["orc", "Como Orçamento"],
+  ["fc1", "Como Forecast 1"], ["fc2", "Como Forecast 2"], ["cor", "Cor personalizada"],
+];
+const escHtml = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
+// Cor que a barra vai ter de fato (para o quadradinho ao lado do nome)
+function corEfetiva(rotulo, esc) {
+  const e = estiloAtual();
+  const ap = aparencias(e, [rotulo], esc && esc.modo !== "auto" ? { [rotulo]: esc } : {})[0];
+  return ap ? ap.fill : e.total;
+}
+
+function desenharCoresBarras() {
+  const box = $("coresBarras");
+  if (!st.dados) { box.innerHTML = '<p class="muted">Selecione os dados primeiro.</p>'; return; }
+  const escolhas = st.spec.barras ?? {};
+  const padraoCor = estiloAtual().total;
+  box.innerHTML = st.dados.rot.map((r, i) => {
+    const esc = escolhas[r] ?? { modo: "auto" };
+    const fill = esc.fill ?? padraoCor, listra = esc.listra ?? "#FFFFFF";
+    const opts = MODOS_BARRA.map(([v, t]) => `<option value="${v}"${v === esc.modo ? " selected" : ""}>${t}</option>`).join("");
+    return `<div class="cor-barra" data-rot="${escHtml(r)}">
+      <div class="topo"><span class="rot" title="${escHtml(r)}"><span class="amostra" style="background:${corEfetiva(r, { ...esc, fill })}"></span>${i + 1}. ${escHtml(r)}</span>
+      <select class="modo">${opts}</select></div>
+      <div class="pers"${esc.modo === "cor" ? "" : " hidden"}>
+        <label>Cor <input type="color" class="fill" value="${fill}"></label>
+        <label><input type="checkbox" class="listrado"${esc.listrado ? " checked" : ""}> Listras</label>
+        <label>Cor da listra <input type="color" class="listra" value="${listra}"${esc.listrado ? "" : " disabled"}></label>
+      </div></div>`;
+  }).join("");
+}
+
+function lerCoresBarras() {
+  const out = {};
+  document.querySelectorAll("#coresBarras .cor-barra").forEach((el) => {
+    const modo = el.querySelector(".modo").value;
+    const pers = el.querySelector(".pers");
+    pers.hidden = modo !== "cor";
+    const listrado = el.querySelector(".listrado").checked;
+    el.querySelector(".listra").disabled = !listrado;
+    const fill = el.querySelector(".fill").value.toUpperCase();
+    el.querySelector(".amostra").style.background = corEfetiva(el.dataset.rot, { modo, fill });
+    if (modo === "auto") return;
+    out[el.dataset.rot] = modo === "cor"
+      ? { modo, fill, listrado, listra: el.querySelector(".listra").value.toUpperCase() }
+      : { modo };
+  });
+  st.spec.barras = out;
+}
+
 // ----------------------------------------------------------------- formulário
 function opcoesBarras(select, valor) {
   const rot = st.dados ? st.dados.rot : [];
@@ -118,6 +171,7 @@ function escreverForm() {
     el.querySelector(".balao").checked = a.balao;
     el.classList.toggle("desligada", !a.on);
   });
+  desenharCoresBarras();
   $("cagrOn").checked = s.anot.cagr.on;
   opcoesBarras($("cagrDe"), s.anot.cagr.de);
   opcoesBarras($("cagrPara"), s.anot.cagr.para);
@@ -139,6 +193,7 @@ function lerForm() {
     a.balao = el.querySelector(".balao").checked;
     el.classList.toggle("desligada", !a.on);
   });
+  lerCoresBarras();
   s.anot.cagr = { on: $("cagrOn").checked, de: +$("cagrDe").value || 1, para: +$("cagrPara").value || 0 };
   $("anotCagr").classList.toggle("desligada", !s.anot.cagr.on);
   if (st.fonte) st.fonte.autoLinhas = $("autoLinhas").checked;
@@ -456,7 +511,7 @@ function ligarEventos() {
   $("btnAtualizarTodos").onclick = () => seguro(atualizarTodos);
   $("listaGraficos").onchange = (e) => seguro(() => selecionarGrafico(e.target.value));
   $("tipo").onchange = (e) => trocarTipo(e.target.value);
-  $("estilo").onchange = () => { if ($("estilo").value !== "__grafico") definirEstiloAtual($("estilo").value); preview(); };
+  $("estilo").onchange = () => { if ($("estilo").value !== "__grafico") definirEstiloAtual($("estilo").value); lerCoresBarras(); preview(); };
 
   // qualquer mudança no formulário atualiza a pré-visualização
   const reagir = () => { lerForm(); preview(); };
@@ -470,6 +525,10 @@ function ligarEventos() {
   });
   $("cagrDe").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
   $("cagrPara").addEventListener("change", () => { $("cagrOn").checked = true; reagir(); });
+
+  $("coresBarras").addEventListener("input", reagir);
+  $("coresBarras").addEventListener("change", reagir);
+  $("btnCoresAuto").onclick = () => { st.spec.barras = {}; desenharCoresBarras(); preview(); };
 
   // editor de estilos
   $("btnEditarEstilo").onclick = abrirEditor;
