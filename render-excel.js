@@ -8,7 +8,7 @@
 // no pior caso, mantém a linha contínua em vez de derrubar o gráfico inteiro.
 // Se algo essencial falhar, as formas parciais são apagadas.
 // =============================================================================
-import { svgHachura } from "./render-svg.js?v=1.0.3";
+import { svgHachura } from "./render-svg.js?v=1.0.4";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const HALIGN = { left: "Left", center: "Center", right: "Right" };
@@ -58,6 +58,8 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
   const criadas = [];
   const tracejadas = { dash: [], dot: [] };
   const setas = [];
+  const pesos = new Map(); // espessura -> formas (aplicadas na fase 2)
+  const peso = (s, w) => { if (!pesos.has(w)) pesos.set(w, []); pesos.get(w).push(s); };
   const pos = (s, x, y, w, h) => { s.left = L + x; s.top = T + y; s.width = Math.max(0.75, w); s.height = Math.max(0.75, h); };
 
   try {
@@ -70,11 +72,11 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
             try {
               s = shapes.addSvg(svgHachura(Math.round(p.w * 4 / 3), Math.round(p.h * 4 / 3), p.fill));
             } catch { s = null; }
-            if (!s) { s = shapes.addGeometricShape("Rectangle"); s.fill.setSolidColor("#FFFFFF"); s.lineFormat.color = p.fill; s.lineFormat.weight = 1.5; }
+            if (!s) { s = shapes.addGeometricShape("Rectangle"); s.fill.setSolidColor("#FFFFFF"); s.lineFormat.color = p.fill; peso(s, 1.5); }
           } else {
             s = shapes.addGeometricShape("Rectangle");
             s.fill.setSolidColor(p.fill);
-            if (p.stroke) { s.lineFormat.color = p.stroke; s.lineFormat.weight = 1; } else s.lineFormat.visible = false;
+            if (p.stroke) { s.lineFormat.color = p.stroke; peso(s, 1); } else s.lineFormat.visible = false;
           }
           pos(s, p.x, p.y, p.w, p.h);
           break;
@@ -82,7 +84,7 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
           if (Math.hypot(p.x2 - p.x1, p.y2 - p.y1) < 0.2) continue;
           s = shapes.addLine(L + p.x1, T + p.y1, L + p.x2, T + p.y2, "Straight");
           s.lineFormat.color = p.color;
-          s.lineFormat.weight = p.w;
+          peso(s, p.w);
           if (p.dash === "dash" || p.dash === "dot") tracejadas[p.dash].push(s);
           if (p.arrow) setas.push(s);
           break;
@@ -99,7 +101,7 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
           pos(s, p.x, p.y, p.w, p.h);
           s.fill.setSolidColor("#FFFFFF");
           s.lineFormat.color = "#000000";
-          s.lineFormat.weight = 1.25;
+          peso(s, 1.25);
           s.textFrame.textRange.text = p.text;
           prepararTexto(s, { ...p, color: "#000000", bold: true, align: "center", valign: "middle" }, fonte);
           break;
@@ -118,16 +120,29 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
     await context.sync();
 
     // ---------------- fase 2: detalhes (com alternativas; nunca derrubam o gráfico)
+    for (const [w, lista] of pesos) {
+      await aplicarComAlternativas(context, lista, (s, v) => (s.lineFormat.weight = v), [...new Set([w, Math.ceil(w), 1])]);
+    }
     await aplicarComAlternativas(context, tracejadas.dash, (s, v) => (s.lineFormat.dashStyle = v), DASH.dash);
     await aplicarComAlternativas(context, tracejadas.dot, (s, v) => (s.lineFormat.dashStyle = v), DASH.dot);
     await aplicarComAlternativas(context, setas, (s, v) => { s.line.endArrowheadStyle = v; }, ["Triangle", "Stealth", "Open"]);
 
     // ---------------- fase 3: agrupar e gravar os metadados
     const grupo = shapes.addGroup(criadas.map((s) => s.id));
-    grupo.name = PREFIXO + Date.now();
-    grupo.altTextDescription = JSON.stringify(meta);
+    const nome = PREFIXO + Date.now();
+    grupo.name = nome;
     grupo.load("id");
     await context.sync();
+    criadas.length = 0; // a partir daqui as formas pertencem ao grupo
+    try {
+      grupo.altTextDescription = JSON.stringify(meta);
+      await context.sync();
+    } catch (e) {
+      // Texto Alt recusado (ex.: limite de tamanho): guarda as configurações no próprio arquivo
+      console.warn("Texto Alt recusado, usando as configurações do arquivo:", descreverErro(e));
+      await salvarMetaNoArquivo(nome, meta);
+      try { grupo.altTextDescription = "GFPA"; await context.sync(); } catch { /* opcional */ }
+    }
     try { grupo.placement = "Move"; await context.sync(); } catch { /* opcional */ }
     return grupo.id;
   } catch (e) {
@@ -140,6 +155,20 @@ export async function inserirNoExcel(context, sheet, grafico, L, T, meta, fonte 
   }
 }
 
+// Configurações guardadas no arquivo (Office document settings), por nome do grupo
+function lerMetaDoArquivo(nome) {
+  try { return Office.context.document.settings.get("gfpa:" + nome); } catch { return null; }
+}
+function salvarMetaNoArquivo(nome, meta) {
+  return new Promise((ok) => {
+    try {
+      const cfg = Office.context.document.settings;
+      cfg.set("gfpa:" + nome, meta);
+      cfg.saveAsync(() => ok());
+    } catch { ok(); }
+  });
+}
+
 // Lista os gráficos do add-in numa planilha
 export async function listarGraficos(context, sheet) {
   const shapes = sheet.shapes;
@@ -148,10 +177,9 @@ export async function listarGraficos(context, sheet) {
   const out = [];
   for (const s of shapes.items) {
     if (!s.name.startsWith(PREFIXO)) continue;
-    try {
-      const meta = JSON.parse(s.altTextDescription);
-      if (meta && meta.gfpa) out.push({ id: s.id, left: s.left, top: s.top, meta });
-    } catch { /* forma com nome parecido, mas sem metadados */ }
+    let meta = null;
+    try { meta = JSON.parse(s.altTextDescription); } catch { meta = lerMetaDoArquivo(s.name); }
+    if (meta && meta.gfpa) out.push({ id: s.id, left: s.left, top: s.top, meta });
   }
   return out;
 }
