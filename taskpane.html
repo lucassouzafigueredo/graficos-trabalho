@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.7.0">
+<link rel="stylesheet" href="taskpane.css?v=1.7.1">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -85,9 +85,18 @@
   </label>
   <datalist id="gruposEscala"></datalist>
   <p class="muted" id="dicaGrupo" hidden></p>
-  <label id="lblCorte">Corte do eixo (valor absoluto)
-    <input id="corte" type="number" placeholder="vazio = sem corte">
-  </label>
+  <div id="lblCorte">
+    <p class="sub">Corte do eixo (<b>//</b>)</p>
+    <div class="segmentado">
+      <label><input type="radio" name="corteModo" value="nenhum"> Sem corte</label>
+      <label><input type="radio" name="corteModo" value="auto"> Automático</label>
+      <label><input type="radio" name="corteModo" value="manual"> Valor</label>
+    </div>
+    <label id="lblCorteValor"><span id="txtCorteValor">O eixo começa em</span>
+      <input id="corte" type="number" placeholder="ex.: 900">
+    </label>
+    <p class="muted" id="dicaCorte"></p>
+  </div>
   <p class="sub">Desenho</p>
   <div class="segmentado">
     <label title="O gráfico entra como uma única imagem de alta resolução: muito mais rápido. Para mudar algo, use o painel (Aplicar)."><input type="radio" name="modoDesenho" value="imagem"> Rápido (imagem)</label>
@@ -207,7 +216,6 @@
   <h2>Preço / Volume / Mix</h2>
   <p class="muted">Layout: <b>Produto | Volume BGT | Preço BGT | Volume Real | Preço Real</b>. No lugar do preço pode vir a <b>Receita</b>: o preço vira Receita ÷ Volume. A linha de total, se houver, é ignorada. Os nomes dos cenários (BGT, Real…) vêm dos cabeçalhos.</p>
   <label class="check"><input type="checkbox" id="pvmMix" checked> Separar o efeito <b>Mix</b> (só faz sentido se os volumes estão na mesma unidade)</label>
-  <label class="check"><input type="checkbox" id="pvmZoom" checked> Cortar o eixo (<b>//</b>) para dar zoom nos efeitos</label>
   <label>Abrir o efeito preço por produto
     <select id="pvmDetalhe"><option value="0">Não (uma barra de Preço)</option><option value="3">Top 3 + demais</option><option value="5">Top 5 + demais</option></select>
   </label>
@@ -271,6 +279,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.7.0"></script>
+<script type="module" src="taskpane.js?v=1.7.1"></script>
 </body>
 </html>

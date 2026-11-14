@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.7.0";
-import { renderSVG } from "./render-svg.js?v=1.7.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.7.0";
+import { modoCorte, TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.7.1";
+import { renderSVG } from "./render-svg.js?v=1.7.1";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.7.1";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.7.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.7.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.7.0";
+} from "./styles.js?v=1.7.1";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.7.1";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.7.1";
 
-const VERSAO = "1.7.0";
+const VERSAO = "1.7.1";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -227,6 +227,18 @@ function desenharDestaque() {
   $("bolValores").checked = st.spec.valores !== false;
   $("rosSeparar").checked = st.spec.separar !== false;
 }
+// Corte do eixo: disponível em todos os gráficos de barras
+const TIPOS_COM_CORTE = ["IBCS", "IBCSM", "EMP", "COL", "COMP", "PVM"];
+function mostrarCorte() {
+  const t = st.spec.tipo, modo = document.querySelector("input[name=corteModo]:checked")?.value ?? "nenhum";
+  $("lblCorte").hidden = !TIPOS_COM_CORTE.includes(t);
+  $("lblCorteValor").hidden = modo !== "manual";
+  $("txtCorteValor").textContent = t === "EMP" ? "Cortar as barras acima de" : "O eixo começa em";
+  $("dicaCorte").textContent = modo === "nenhum" ? "" : t === "EMP"
+    ? "As barras muito altas são cortadas no topo com //; as pequenas ficam legíveis."
+    : "O eixo começa acima de zero para dar zoom nas diferenças; as barras cortadas ganham //. Com valores negativos não há corte.";
+}
+
 function mostrarSecoesDoTipo() {
   const t = st.spec.tipo, tab = t === "TAB", dest = t === "ROS" || t === "BOL";
   $("secTabela").hidden = !tab;
@@ -257,7 +269,9 @@ function escreverForm() {
   $("grupoEscala").value = s.grupoEscala ?? "";
   desenharGrupos();
   $("corte").value = s.corte ? s.corte : "";
-  $("lblCorte").hidden = s.tipo !== "EMP";
+  const mc = modoCorte(s);
+  document.querySelectorAll("input[name=corteModo]").forEach((r) => (r.checked = r.value === mc));
+  mostrarCorte();
   mostrarSecoesDoTipo();
   $("tabUnidade").value = s.unidade ?? "auto";
   $("tabCasas").value = s.casas ?? "";
@@ -271,7 +285,6 @@ function escreverForm() {
   desenharLinhasTabela();
   desenharDestaque();
   $("pvmMix").checked = s.pvmMix !== false;
-  $("pvmZoom").checked = s.pvmZoom !== false;
   $("pvmDetalhe").value = String(s.pvmDetalhe ?? 0);
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
@@ -301,6 +314,8 @@ function lerForm() {
   s.nota = $("nota").value.trim();
   s.grupoEscala = $("grupoEscala").value.trim() || undefined;
   s.corte = Math.abs(parseFloat($("corte").value)) || 0;
+  s.corteModo = document.querySelector("input[name=corteModo]:checked")?.value ?? "nenhum";
+  mostrarCorte();
   s.W = Math.max(150, +$("largura").value || TIPOS[s.tipo].W);
   s.H = Math.max(100, +$("altura").value || TIPOS[s.tipo].H);
   s.modo = document.querySelector("input[name=modoDesenho]:checked")?.value ?? "imagem";
@@ -316,7 +331,7 @@ function lerForm() {
   lerCoresBarras();
   lerColunasTabela();
   lerLinhasTabela();
-  if (s.tipo === "PVM") { s.pvmMix = $("pvmMix").checked; s.pvmZoom = $("pvmZoom").checked; s.pvmDetalhe = +$("pvmDetalhe").value || 0; }
+  if (s.tipo === "PVM") { s.pvmMix = $("pvmMix").checked; s.pvmDetalhe = +$("pvmDetalhe").value || 0; }
   if (s.tipo === "ROS" || s.tipo === "BOL") { s.destaque = $("destaque").value || undefined; s.valores = $("bolValores").checked; s.separar = $("rosSeparar").checked; }
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
@@ -419,6 +434,7 @@ function sugerirTipo(valores) {
 function trocarTipo(tipo, manterAnot = false) {
   st.spec.tipo = tipo;
   st.spec.W = TIPOS[tipo].W; st.spec.H = TIPOS[tipo].H;
+  st.spec.corteModo = undefined; // cada tipo começa no seu padrão (PVM: automático; demais: sem corte)
   if (!manterAnot) st.spec.anot = anotacoesPadrao(tipo);
   try { processarValores(); } catch (e) { msg(e.message, "erro"); }
   escreverForm(); preview();
@@ -795,6 +811,7 @@ function ligarEventos() {
   // qualquer mudança no formulário atualiza a pré-visualização
   const reagir = () => { lerForm(); preview(); };
   ["titulo", "subtitulo", "fonteDados", "nota", "corte", "largura", "altura", "cagrOn", "cagrDe", "cagrPara", "autoLinhas"].forEach((id) => $(id).addEventListener("input", reagir));
+  document.querySelectorAll("input[name=corteModo]").forEach((r) => r.addEventListener("change", reagir));
   document.querySelectorAll(".anot[data-k]").forEach((el) => {
     el.addEventListener("input", reagir);
     el.addEventListener("change", (e) => {
@@ -809,7 +826,7 @@ function ligarEventos() {
   ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros",
     "tabAtual", "tabOrdem", "tabVisRef", "tabVisAc", "tabVisAbs", "tabVisPct"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabRefs").addEventListener("change", reagir);
-  ["destaque", "bolValores", "rosSeparar", "pvmMix", "pvmZoom", "pvmDetalhe"].forEach((id) => $(id).addEventListener("change", reagir));
+  ["destaque", "bolValores", "rosSeparar", "pvmMix", "pvmDetalhe"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };

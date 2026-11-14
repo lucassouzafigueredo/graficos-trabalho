@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.7.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.7.1";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -210,6 +210,7 @@ export function montarGrafico(dados, specOrig, estilo) {
   const moldura = { titulo: specOrig.titulo, subtitulo: specOrig.subtitulo, fonte: specOrig.fonteDados, nota: specOrig.nota };
   const spec = { ...specOrig, titulo: "" };
   tela.escalaFixa = spec.escalaFixa ?? null;
+  tela.corte = { modo: modoCorte(spec), valor: Math.abs(+spec.corte || 0) };
   tela.escolhas = spec.barras ?? {};
   const anot = spec.anot ?? anotacoesPadrao(spec.tipo);
   const W = spec.W ?? TIPOS[spec.tipo].W, H = spec.H ?? TIPOS[spec.tipo].H;
@@ -224,7 +225,7 @@ export function montarGrafico(dados, specOrig, estilo) {
       break;
     }
     case "EMP":
-      cascataEmpilhada(tela, dados, W, H, spec.titulo, spec.corte || 0, anot);
+      cascataEmpilhada(tela, dados, W, H, spec.titulo, anot);
       break;
     case "COL":
       colunas(tela, dados, W, H, spec.titulo, anot);
@@ -238,7 +239,6 @@ export function montarGrafico(dados, specOrig, estilo) {
       break;
     }
     case "PVM":
-      tela.zoom = spec.pvmZoom !== false;
       cascataIBCS(tela, dadosPVM(pvmCalcular(dados, spec), spec), 0, 0, 0, W, H, "", null, anot, true);
       break;
     case "ROS":
@@ -254,6 +254,24 @@ export function montarGrafico(dados, specOrig, estilo) {
   }
   const r = emoldurar(tela, largura, altura, moldura);
   return { largura, altura: r.altura, prims: tela.p, escala: tela.escalaNatural ?? null };
+}
+
+// Corte do eixo (//): "nenhum" | "auto" | "manual" (valor em spec.corte)
+//   cascata empilhada: corta o TOPO das barras muito altas (as pequenas ficam legíveis)
+//   demais barras: o eixo começa acima de zero (zoom nas diferenças); os totais ganham "//"
+export function modoCorte(spec) {
+  if (spec.corteModo) return spec.corteModo;
+  if (spec.tipo === "PVM") return spec.pvmZoom === false ? "nenhum" : "auto";
+  return +spec.corte > 0 ? "manual" : "nenhum";
+}
+function baseCorte(corte, niveis, maxHi) {
+  if (!corte || corte.modo === "nenhum" || !niveis.length) return 0;
+  const nMin = Math.min(...niveis);
+  if (nMin <= 0) return 0; // com valores negativos ou zero não há o que cortar embaixo
+  if (corte.modo === "manual") return corte.valor > 0 && corte.valor < nMin ? corte.valor : 0;
+  const amp = maxHi - nMin;
+  const base = Math.max(0, nMin - Math.max(amp * 1.2, maxHi * 0.04));
+  return base > maxHi * 0.15 ? base : 0;
 }
 
 // Escala: guarda a natural (para o grupo "mesma escala") e aplica a fixa, se houver.
@@ -347,13 +365,11 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
   else { const s = escalar(tela, { min: Math.min(0, ...lo), max: Math.max(0, ...hi) }); tela.vMin = s.min; tela.vMax = s.max; }
   if (tela.vMax === tela.vMin) tela.vMax = tela.vMin + 1;
   // zoom (ponte PVM): corta o eixo abaixo do menor nível para os efeitos aparecerem; totais ganham "//"
-  let cortado = false;
-  if (tela.zoom && !escala && Math.min(...lo) >= 0) {
-    const niveis = ac.slice(1, -1).concat(lo.slice(1, -1), [ini, fim]);
-    const nMin = Math.min(...niveis), amp = Math.max(...hi) - nMin;
-    const base = Math.max(0, nMin - Math.max(amp * 1.2, Math.max(...hi) * 0.04));
-    if (base > Math.max(...hi) * 0.15) { tela.vMin = base; cortado = true; }
+  if (!escala) {
+    const base = baseCorte(tela.corte, ac.slice(1, -1).concat(lo.slice(1, -1), [ini, fim]), Math.max(...hi));
+    if (base > 0) tela.vMin = base;
   }
+  const cortado = tela.vMin > 0;
   const Yc = (v) => tela.Y(tela.clip(v));
 
   if (comFundo) tela.fundo(L, T, W, H);
@@ -402,6 +418,13 @@ function multiplos(tela, d, Wp, Hp, titulo, anot) {
     gMin = Math.min(gMin, ...lo); gMax = Math.max(gMax, ...hi);
   }
   ({ min: gMin, max: gMax } = escalar(tela, { min: gMin, max: gMax }));
+  const niveisM = [];
+  for (let c = 0; c < d.nCol; c++) {
+    const { lo, ac, ini, fim } = calcCascata(d, c);
+    niveisM.push(...ac.slice(1, -1), ...lo.slice(1, -1), ini, fim);
+  }
+  const baseM = baseCorte(tela.corte, niveisM, gMax);
+  if (baseM > 0) gMin = baseM;
   const porLinha = Math.min(3, d.nCol), nLinhas = Math.ceil(d.nCol / porLinha);
   const titH = titulo ? 26 : 0;
   const W = porLinha * (Wp + GX) - GX, H = titH + nLinhas * (Hp + GY) - GY;
@@ -415,7 +438,7 @@ function multiplos(tela, d, Wp, Hp, titulo, anot) {
 }
 
 // ---------------------------- Cascata empilhada -------------------------------
-function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
+function cascataEmpilhada(tela, d, W, H, titulo, anot) {
   const e = tela.e, n = d.nLin, m = d.nCol;
   const tp = [], lo = [], hi = [], ac = [], tot = [];
   let acum = 0;
@@ -430,6 +453,12 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
     ac[i] = acum;
   }
   ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: Math.min(0, ...lo), max: Math.max(0, ...hi) }));
+  let corte = tela.corte.modo === "manual" ? tela.corte.valor : 0;
+  if (tela.corte.modo === "auto") {
+    // automático: a maior barra é cortada quando passa de 2,2× a segunda maior
+    const alt = hi.map((h, i) => Math.max(Math.abs(h), Math.abs(lo[i]))).sort((a, b) => b - a);
+    if (alt.length > 1 && alt[0] > alt[1] * 2.2) corte = alt[1] * 1.35;
+  }
   if (corte > 0) {
     if (tela.vMax >= -tela.vMin) { if (corte < tela.vMax) tela.vMax = corte; }
     else if (corte < -tela.vMin) tela.vMin = -corte;
@@ -513,6 +542,9 @@ function colunas(tela, d, W, H, titulo, anot) {
   const e = tela.e, n = d.nLin;
   const tot = d.v.map((linha) => linha.reduce((a, x) => a + num(x), 0));
   ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: 0, max: Math.max(0, ...tot) }));
+  const baseC = baseCorte(tela.corte, tot, tela.vMax);
+  if (baseC > 0) tela.vMin = baseC;
+  const Yc = (v) => tela.Y(tela.clip(v));
   if (tela.vMax === tela.vMin) tela.vMax = 1;
   tela.fundo(0, 0, W, H);
   let titH = 0;
@@ -530,14 +562,16 @@ function colunas(tela, d, W, H, titulo, anot) {
     d.v[i].forEach((x, c) => {
       const a = Math.abs(num(x));
       if (a <= 0) return;
-      if (d.nCol === 1 && ap[i]) rectAparencia(tela, bx, tela.Y(cur), bw, tela.Y(cur + a), ap[i]);
-      else tela.rect(bx, tela.Y(cur), bw, tela.Y(cur + a), e.colunas[c % 4]);
+      if (Yc(cur) - Yc(cur + a) < 0.2) { cur += a; return; } // segmento inteiro abaixo do corte
+      if (d.nCol === 1 && ap[i]) rectAparencia(tela, bx, Yc(cur), bw, Yc(cur + a), ap[i]);
+      else tela.rect(bx, Yc(cur), bw, Yc(cur + a), e.colunas[c % 4]);
       cur += a;
     });
+    if (baseC > 0 && tot[i] > 0) tela.quebra(bx, bw, tela.pBot - 12);
     tela.text(fmtNum(tot[i]), cx, tela.Y(tot[i]) - 3, "bottom", catW, { size: e.fonte + 4 });
     tela.text(d.rot[i], cx, tela.pBot + 4, "top", catW, { size: e.fonte + 1, wrap: true });
   }
-  tela.line(xL, tela.Y(0), xR, tela.Y(0), "#404040", 0.75);
+  tela.line(xL, Yc(0), xR, Yc(0), "#404040", 0.75);
   anotacoes(tela, anot, false, xR);
 }
 
@@ -547,6 +581,9 @@ function comparacao(tela, d, W, H, titulo, anot) {
   if (n < 2) throw new Error("A comparação precisa de pelo menos 2 linhas.");
   const vals = d.v.map((linha) => num(linha[0]));
   ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: Math.min(0, ...vals), max: Math.max(0, ...vals) }));
+  const baseP = baseCorte(tela.corte, vals, tela.vMax);
+  if (baseP > 0) tela.vMin = baseP;
+  const Yc = (v) => tela.Y(tela.clip(v));
   if (tela.vMax === tela.vMin) tela.vMax = tela.vMin + 1;
   tela.fundo(0, 0, W, H);
   let titH = 0;
@@ -560,12 +597,13 @@ function comparacao(tela, d, W, H, titulo, anot) {
   vals.forEach((v, i) => {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, v, v);
-    rectAparencia(tela, bx, tela.Y(0), bw, tela.Y(v), ap[i] ?? { fill: i === 0 ? e.colunas[0] : e.colunas[1] });
+    rectAparencia(tela, bx, Yc(0), bw, tela.Y(v), ap[i] ?? { fill: i === 0 ? e.colunas[0] : e.colunas[1] });
+    if (baseP > 0) tela.quebra(bx, bw, tela.pBot - 12);
     if (v >= 0) tela.text(fmtNum(v), cx, tela.Y(v) - 3, "bottom", catW, { size: e.fonte + 6 });
     else tela.text(fmtNum(v), cx, tela.Y(v) + 3, "top", catW, { size: e.fonte + 6 });
     tela.text(d.rot[i], cx, tela.pBot + 4, "top", catW, { size: e.fonte + 1, wrap: true });
   });
-  tela.line(xL, tela.Y(0), xR, tela.Y(0), "#404040", 0.75);
+  tela.line(xL, Yc(0), xR, Yc(0), "#404040", 0.75);
   anotacoes(tela, anot, false, xR);
 }
 
