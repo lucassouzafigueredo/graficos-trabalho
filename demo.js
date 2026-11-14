@@ -59,6 +59,10 @@ export const DEMOS = [
     ["Unidade", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun"],
     ["Unidade A", 120, 80, -40, 60, 150, 90], ["Unidade B", -210, -150, -90, -30, 20, 45],
     ["Unidade C", 35, -15, 10, 5, -60, -120], ["Unidade D", 260, 190, 240, 310, 280, 330]] },
+  { tipo: "COL", titulo: "Receita – BU Sul, R$ mi", estilo: "cons-azul", semCagr: true, valores: [
+    ["Ano", "Receita"], ["2022", 410], ["2023", 452], ["2024", 498], ["2025", 541]] },
+  { tipo: "COL", titulo: "Receita – BU Norte, R$ mi", estilo: "cons-azul", semCagr: true, valores: [
+    ["Ano", "Receita"], ["2022", 120], ["2023", 141], ["2024", 168], ["2025", 196]] },
 ];
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
@@ -81,7 +85,9 @@ export const EXEMPLOS = [
     barras: { LY: { modo: "cor", fill: "#7F7F7F", listrado: false } },
     descricao: "7. Orçamento x Forecast – cenário reconhecido pelo nome; LY com cor escolhida em Cores das barras" },
   { demo: 7, estilo: "cons-azul", descricao: "8. Comparação – seta e balão de variação entre dois períodos" },
-  { demo: 8, estilo: "cinza", descricao: "9. Tabela de variações – DRE Real x BGT: custos invertidos (queda = verde), subtotais e comentários numerados" },
+  { demo: 8, estilo: "cinza", titulo: "Lucro líquido 4,0% abaixo do BGT: CPV (−450) e Deduções (−150) anularam Receita bruta (+600)",
+    subtitulo: "DRE – Real x Orçamento, R$ mil", fonteDados: "sistema contábil, fechamento de outubro", nota: "dados fictícios de exemplo",
+    descricao: "9. Tabela de variações – título-mensagem (botão Sugerir), subtítulo, fonte e nota; custos invertidos e comentários numerados" },
   { demo: 8, estilo: "cinza", cascata: true, comentarios: false, descricao: "10. Tabela com cascata – a coluna Real vira uma ponte que zera nos subtotais" },
   { demo: 9, estilo: "orc-fc", topN: 5, descricao: "11. Top N – só os 5 clientes com maior desvio; o resto agrupado em Outros" },
   { demo: 10, estilo: "cinza", descricao: "12. Várias referências – Real x BGT e Real x FC 9+3 lado a lado, na mesma escala" },
@@ -90,4 +96,10 @@ export const EXEMPLOS = [
   { demo: 11, estilo: "cons-azul", destaque: "Digital", descricao: "14. Roscas proporcionais – área = receita do ano; canal destacado e variação da participação em p.p." },
   { demo: 12, estilo: "cons-azul", destaque: "Sudeste", descricao: "15. Matriz de bolhas – tamanho = receita, cor = faixa de margem % (cabeçalhos repetidos), região destacada" },
   { demo: 13, estilo: "ibcs", descricao: "16. Matriz de bolhas de desvios – vermelho/verde por faixa, tamanho = tamanho do desvio" },
+  { demo: 14, estilo: "cons-azul", grupo: "BUs", subtitulo: "Mesma escala do gráfico abaixo (grupo “BUs”)",
+    anot: { v: [{ on: false, de: 1, para: 0, modo: "P", balao: false }, { on: false, de: 1, para: 0, modo: "P", balao: false }], cagr: { on: true, de: 1, para: 4 } },
+    descricao: "17. Mesma escala – BU Sul e BU Norte no grupo “BUs”: o tamanho das barras é comparável entre os gráficos" },
+  { demo: 15, estilo: "cons-azul", grupo: "BUs", subtitulo: "Mesma escala do gráfico acima (grupo “BUs”)",
+    anot: { v: [{ on: false, de: 1, para: 0, modo: "P", balao: false }, { on: false, de: 1, para: 0, modo: "P", balao: false }], cagr: { on: true, de: 1, para: 4 } },
+    descricao: "18. Mesma escala – sem o grupo, a BU Norte pareceria do mesmo tamanho que a Sul" },
 ];

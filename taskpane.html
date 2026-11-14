@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.5.1">
+<link rel="stylesheet" href="taskpane.css?v=1.6.0">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -69,7 +69,21 @@
       <option value="BOL">Matriz de bolhas</option>
     </select>
   </label>
-  <label>Título <input id="titulo" placeholder="opcional"></label>
+  <label for="titulo">Título-mensagem (a conclusão, não o assunto)</label>
+  <div class="linha">
+    <input id="titulo" placeholder="ex.: EBITDA 1% acima do BGT, puxado por…">
+    <button id="btnSugerirTitulo" title="Sugere a conclusão a partir dos dados; edite à vontade">Sugerir</button>
+  </div>
+  <label>Subtítulo <input id="subtitulo" placeholder="ex.: DRE, R$ mil – outubro/26"></label>
+  <div class="duas">
+    <label>Fonte <input id="fonteDados" placeholder="ex.: SAP, fechamento"></label>
+    <label>Nota <input id="nota" placeholder="ex.: sem IFRS 16"></label>
+  </div>
+  <label>Mesma escala que o grupo
+    <input id="grupoEscala" list="gruposEscala" placeholder="vazio = escala própria; ex.: BUs">
+  </label>
+  <datalist id="gruposEscala"></datalist>
+  <p class="muted" id="dicaGrupo" hidden></p>
   <label id="lblCorte">Corte do eixo (valor absoluto)
     <input id="corte" type="number" placeholder="vazio = sem corte">
   </label>
@@ -245,6 +259,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.5.1"></script>
+<script type="module" src="taskpane.js?v=1.6.0"></script>
 </body>
 </html>

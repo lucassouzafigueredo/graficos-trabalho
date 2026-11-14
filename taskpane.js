@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela } from "./engine.js?v=1.5.1";
-import { renderSVG } from "./render-svg.js?v=1.5.1";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.5.1";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.6.0";
+import { renderSVG } from "./render-svg.js?v=1.6.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.6.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.5.1";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.5.1";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.5.1";
+} from "./styles.js?v=1.6.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.6.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.6.0";
 
-const VERSAO = "1.5.1";
+const VERSAO = "1.6.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -250,6 +250,11 @@ function escreverForm() {
   const s = st.spec;
   $("tipo").value = s.tipo;
   $("titulo").value = s.titulo ?? "";
+  $("subtitulo").value = s.subtitulo ?? "";
+  $("fonteDados").value = s.fonteDados ?? "";
+  $("nota").value = s.nota ?? "";
+  $("grupoEscala").value = s.grupoEscala ?? "";
+  desenharGrupos();
   $("corte").value = s.corte ? s.corte : "";
   $("lblCorte").hidden = s.tipo !== "EMP";
   mostrarSecoesDoTipo();
@@ -287,6 +292,10 @@ function escreverForm() {
 function lerForm() {
   const s = st.spec;
   s.titulo = $("titulo").value.trim();
+  s.subtitulo = $("subtitulo").value.trim();
+  s.fonteDados = $("fonteDados").value.trim();
+  s.nota = $("nota").value.trim();
+  s.grupoEscala = $("grupoEscala").value.trim() || undefined;
   s.corte = Math.abs(parseFloat($("corte").value)) || 0;
   s.W = Math.max(150, +$("largura").value || TIPOS[s.tipo].W);
   s.H = Math.max(100, +$("altura").value || TIPOS[s.tipo].H);
@@ -329,9 +338,70 @@ function preview() {
   const alvo = $("preview");
   if (!st.dados) return;
   try {
-    const g = montarGrafico(st.dados, st.spec, estiloAtual());
+    const g = montarGrafico(st.dados, { ...st.spec, escalaFixa: escalaGrupoPreview() }, estiloAtual());
     alvo.innerHTML = renderSVG(g);
   } catch (e) { alvo.innerHTML = `<p class="muted">${e.message}</p>`; }
+}
+
+// ----------------------------------------------------------------- título-mensagem
+function sugerirTituloNoForm() {
+  if (!st.dados) { msg("Carregue os dados primeiro."); return; }
+  lerForm();
+  const t = sugerirTitulo(st.dados, st.spec);
+  if (!t) return;
+  // o título antigo (o "assunto") desce para o subtítulo, se ele estiver vazio
+  if (!st.spec.subtitulo && st.spec.titulo && st.spec.titulo !== st.ultimaSugestao) $("subtitulo").value = st.spec.titulo;
+  $("titulo").value = t;
+  st.ultimaSugestao = t;
+  lerForm(); preview();
+  msg("Título sugerido a partir dos dados. Ajuste o texto se quiser.", "ok");
+}
+
+// ----------------------------------------------------------------- mesma escala (grupos)
+// Gráficos do mesmo tipo com o mesmo nome de grupo usam a mesma escala (regra IBCS):
+// cada um é desenhado com a união das escalas naturais de todos do grupo.
+function membrosDoGrupo(grupo, tipo, excetoId) {
+  if (!grupo) return [];
+  return (st.graficos ?? []).filter((g) => g.meta.spec.grupoEscala === grupo && g.meta.spec.tipo === tipo && g.id !== excetoId);
+}
+async function escalaDosOutros(ctx, grupo, tipo, excetoId) {
+  const escalas = [];
+  for (const g of membrosDoGrupo(grupo, tipo, excetoId)) {
+    try {
+      const r = await lerFonte(ctx, clone(g.meta.fonte));
+      const dados = lerDados(r.values, r.text, TIPOS[tipo].comTipo);
+      escalas.push(montarGrafico(dados, { ...g.meta.spec, escalaFixa: null }, g.meta.estilo).escala);
+    } catch { /* membro com dados inválidos: ignora */ }
+  }
+  return unirEscalas(escalas);
+}
+function escalaGrupoPreview() {
+  const c = st.cacheGrupo;
+  return st.spec.grupoEscala && c && c.grupo === st.spec.grupoEscala && c.tipo === st.spec.tipo ? c.escala : null;
+}
+async function atualizarCacheGrupo() {
+  const grupo = st.spec.grupoEscala, tipo = st.spec.tipo;
+  const n = membrosDoGrupo(grupo, tipo, st.editando?.id).length;
+  $("dicaGrupo").hidden = !grupo;
+  $("dicaGrupo").textContent = !grupo ? "" : n ? `Mesma escala de ${n} outro(s) gráfico(s) “${TIPOS[tipo].nome}” do grupo “${grupo}”. Use o mesmo tamanho em todos.`
+    : `Nenhum outro gráfico deste tipo no grupo “${grupo}” ainda. Dê o mesmo nome de grupo aos gráficos que devem ser comparados.`;
+  if (!grupo || !st.noExcel || !n) { st.cacheGrupo = null; preview(); return; }
+  let escala = null;
+  await Excel.run(async (ctx) => { escala = await escalaDosOutros(ctx, grupo, tipo, st.editando?.id); });
+  st.cacheGrupo = { grupo, tipo, escala };
+  preview();
+}
+function desenharGrupos() {
+  const nomes = [...new Set((st.graficos ?? []).map((g) => g.meta.spec.grupoEscala).filter(Boolean))];
+  $("gruposEscala").innerHTML = nomes.map((n) => `<option value="${escHtml(n)}">`).join("");
+}
+// redesenha os outros membros do grupo (a escala comum pode ter mudado)
+async function redesenharGrupo(grupo, tipo, excetoId) {
+  if (!grupo) return 0;
+  await recarregarLista();
+  const outros = membrosDoGrupo(grupo, tipo, excetoId);
+  for (const item of outros) await Excel.run(async (ctx) => { await redesenhar(ctx, item, item.meta); });
+  return outros.length;
 }
 
 // Sugere o tipo pela forma dos dados (coluna B só com T/D/F => cascata empilhada)
@@ -431,6 +501,7 @@ function montarMeta(fonte, spec, estilo) {
 async function redesenhar(ctx, item, meta) {
   const r = await lerFonte(ctx, meta.fonte);
   const dados = lerDados(r.values, r.text, TIPOS[meta.spec.tipo].comTipo);
+  meta.spec.escalaFixa = meta.spec.grupoEscala ? await escalaDosOutros(ctx, meta.spec.grupoEscala, meta.spec.tipo, item.id) : null;
   const g = montarGrafico(dados, meta.spec, meta.estilo);
   const ws = ctx.workbook.worksheets.getItem(item.sheet);
   const novoId = await desenharNoExcel(ctx, ws, g, item.left + 8, item.top + 8, meta);
@@ -448,12 +519,14 @@ async function inserir() {
     const r = await lerFonte(ctx, st.fonte);
     const dados = lerDados(r.values, r.text, TIPOS[st.spec.tipo].comTipo);
     const estilo = estiloAtual();
+    st.spec.escalaFixa = st.spec.grupoEscala ? await escalaDosOutros(ctx, st.spec.grupoEscala, st.spec.tipo, null) : null;
     const g = montarGrafico(dados, st.spec, estilo);
     const ws = ctx.workbook.worksheets.getItem(st.fonte.sheet);
     idNovo = await desenharNoExcel(ctx, ws, g, r.left + r.width + 30, r.top + 8, montarMeta(st.fonte, st.spec, estilo));
   });
+  const nG = await redesenharGrupo(st.spec.grupoEscala, st.spec.tipo, idNovo);
   await recarregarLista(idNovo);
-  msg("Gráfico inserido. Ele está na lista acima para edição.", "ok");
+  msg("Gráfico inserido. Ele está na lista acima para edição." + (nG ? ` ${nG} gráfico(s) do grupo redesenhado(s) na mesma escala.` : ""), "ok");
 }
 
 async function aplicar() {
@@ -463,8 +536,12 @@ async function aplicar() {
   await Excel.run(async (ctx) => {
     idNovo = await redesenhar(ctx, st.editando, montarMeta(st.fonte, st.spec, estiloAtual()));
   });
+  // grupo atual e o anterior (se o gráfico saiu de um grupo) se reajustam
+  const antes = st.editando.meta.spec.grupoEscala;
+  let nG = await redesenharGrupo(st.spec.grupoEscala, st.spec.tipo, idNovo);
+  if (antes && antes !== st.spec.grupoEscala) nG += await redesenharGrupo(antes, st.spec.tipo, idNovo);
   await recarregarLista(idNovo);
-  msg("Gráfico atualizado.", "ok");
+  msg("Gráfico atualizado." + (nG ? ` ${nG} gráfico(s) do grupo redesenhado(s) na mesma escala.` : ""), "ok");
 }
 
 async function recarregarLista(selecionarId) {
@@ -479,6 +556,7 @@ async function recarregarLista(selecionarId) {
     const t = g.meta.spec.titulo ? ` – ${g.meta.spec.titulo}` : "";
     sel.appendChild(new Option(`${g.sheet} · ${TIPOS[g.meta.spec.tipo]?.nome ?? g.meta.spec.tipo}${t}`, g.id));
   });
+  desenharGrupos();
   if (selecionarId) { sel.value = selecionarId; await selecionarGrafico(selecionarId, true); }
   else if (st.editando) {
     const ainda = st.graficos.find((g) => g.id === st.editando.id);
@@ -508,6 +586,7 @@ async function selecionarGrafico(id, silencioso = false) {
   });
   processarValores();
   escreverForm(); preview();
+  if (st.spec.grupoEscala) await atualizarCacheGrupo();
   if (!silencioso) msg("Editando o gráfico. Mude o que quiser e clique em “Aplicar”.");
 }
 
@@ -545,6 +624,14 @@ async function gerarExemplos() {
     colGraf.load("left");
     await ctx.sync();
 
+    // escala comum dos exemplos que formam um grupo
+    const escalasExemplos = {};
+    for (const ex of EXEMPLOS.filter((x) => x.grupo)) {
+      const dm = DEMOS[ex.demo];
+      const nat = montarGrafico(lerDados(dm.valores, textosDemo(dm.valores), TIPOS[dm.tipo].comTipo), { tipo: dm.tipo }, estiloPorId(ex.estilo)).escala;
+      escalasExemplos[ex.grupo] = unirEscalas([escalasExemplos[ex.grupo], nat]);
+    }
+
     let linha = 3;
     for (const ex of EXEMPLOS) {
       const demo = DEMOS[ex.demo];
@@ -576,6 +663,8 @@ async function gerarExemplos() {
         modo: modoPadrao(),
         cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
         ordem: ex.ordem ?? "planilha", colunas: ex.colunas, destaque: ex.destaque ?? demo.destaque,
+        subtitulo: ex.subtitulo, fonteDados: ex.fonteDados, nota: ex.nota, grupoEscala: ex.grupo,
+        escalaFixa: ex.grupo ? escalasExemplos[ex.grupo] : null,
       };
       const g = montarGrafico(dados, spec, estilo);
       await desenharNoExcel(ctx, ws, g, colGraf.left, desc.top + 8, montarMeta(fonte, spec, estilo));
@@ -610,6 +699,10 @@ async function processarMudancas() {
       return mud.some((m) => st.abas[m.abaId] === f.sheet && intersecta(parseA1(m.address), zona));
     });
     if (!afetados.length) return;
+    for (const a of [...afetados]) {
+      for (const m of membrosDoGrupo(a.meta.spec.grupoEscala, a.meta.spec.tipo, a.id))
+        if (!afetados.includes(m)) afetados.push(m);
+    }
     let idEditado = null;
     for (const item of afetados) {
       await Excel.run(async (ctx) => {
@@ -689,11 +782,13 @@ function ligarEventos() {
   $("btnExemplos").onclick = () => seguro(gerarExemplos);
   $("listaGraficos").onchange = (e) => seguro(() => selecionarGrafico(e.target.value));
   $("tipo").onchange = (e) => trocarTipo(e.target.value);
+  $("btnSugerirTitulo").onclick = () => seguro(async () => sugerirTituloNoForm());
+  $("grupoEscala").addEventListener("change", () => seguro(async () => { lerForm(); await atualizarCacheGrupo(); }));
   $("estilo").onchange = () => { if ($("estilo").value !== "__grafico") definirEstiloAtual($("estilo").value); lerCoresBarras(); preview(); };
 
   // qualquer mudança no formulário atualiza a pré-visualização
   const reagir = () => { lerForm(); preview(); };
-  ["titulo", "corte", "largura", "altura", "cagrOn", "cagrDe", "cagrPara", "autoLinhas"].forEach((id) => $(id).addEventListener("input", reagir));
+  ["titulo", "subtitulo", "fonteDados", "nota", "corte", "largura", "altura", "cagrOn", "cagrDe", "cagrPara", "autoLinhas"].forEach((id) => $(id).addEventListener("input", reagir));
   document.querySelectorAll(".anot[data-k]").forEach((el) => {
     el.addEventListener("input", reagir);
     el.addEventListener("change", (e) => {

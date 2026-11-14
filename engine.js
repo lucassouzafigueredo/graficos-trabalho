@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.5.1";
+import { fmtNum, fmtPct } from "./formats.js?v=1.6.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -203,8 +203,12 @@ const reservaTopo = (anot) => (anot.cagr.on ? 48 : 0);
 // -----------------------------------------------------------------------------
 // API principal
 // -----------------------------------------------------------------------------
-export function montarGrafico(dados, spec, estilo) {
+export function montarGrafico(dados, specOrig, estilo) {
   const tela = new Tela(estilo);
+  // título, subtítulo, fonte e nota são desenhados aqui, em volta do gráfico (padrão único)
+  const moldura = { titulo: specOrig.titulo, subtitulo: specOrig.subtitulo, fonte: specOrig.fonteDados, nota: specOrig.nota };
+  const spec = { ...specOrig, titulo: "" };
+  tela.escalaFixa = spec.escalaFixa ?? null;
   tela.escolhas = spec.barras ?? {};
   const anot = spec.anot ?? anotacoesPadrao(spec.tipo);
   const W = spec.W ?? TIPOS[spec.tipo].W, H = spec.H ?? TIPOS[spec.tipo].H;
@@ -243,7 +247,75 @@ export function montarGrafico(dados, spec, estilo) {
     default:
       throw new Error("Tipo de gráfico desconhecido: " + spec.tipo);
   }
-  return { largura, altura, prims: tela.p };
+  const r = emoldurar(tela, largura, altura, moldura);
+  return { largura, altura: r.altura, prims: tela.p, escala: tela.escalaNatural ?? null };
+}
+
+// Escala: guarda a natural (para o grupo "mesma escala") e aplica a fixa, se houver.
+// Nunca encolhe: a escala fixa só amplia a natural, para nenhum dado ficar de fora.
+function escalar(tela, nat) {
+  tela.escalaNatural = nat;
+  const f = tela.escalaFixa;
+  if (!f) return nat;
+  const out = { min: Math.min(nat.min, f.min ?? nat.min), max: Math.max(nat.max, f.max ?? nat.max) };
+  if (nat.d !== undefined) out.d = Math.max(nat.d, f.d ?? 0);
+  return out;
+}
+export function unirEscalas(lista) {
+  const v = lista.filter(Boolean);
+  if (!v.length) return null;
+  const out = { min: Math.min(...v.map((x) => x.min)), max: Math.max(...v.map((x) => x.max)) };
+  const ds = v.map((x) => x.d).filter((x) => x !== undefined);
+  if (ds.length) out.d = Math.max(...ds);
+  return out;
+}
+
+// Linhas estimadas de um texto quebrado na largura w
+const linhasTexto = (t, w, size, max) => Math.min(max, Math.max(1, Math.ceil((String(t).length * size * 0.55) / Math.max(40, w))));
+
+// Título-mensagem + subtítulo em cima, fonte/nota embaixo; desloca o gráfico e refaz o fundo
+function emoldurar(tela, W, H, m) {
+  const e = tela.e;
+  const tt = (m.titulo ?? "").trim(), st = (m.subtitulo ?? "").trim(), fo = (m.fonte ?? "").trim(), no = (m.nota ?? "").trim();
+  const prims = tela.p.filter((q) => !q.fundo);
+  let topo = 0;
+  const cab = [];
+  if (tt) {
+    const sz = e.fonte + 3, nl = linhasTexto(tt, W, sz, 2);
+    cab.push({ t: "text", x: 0, y: topo, w: W, h: sz * 1.35 * nl, text: tt, size: sz, color: "#000000", bold: true, italic: false, align: "left", valign: "top", wrap: nl > 1, maxLinhas: nl });
+    topo += sz * 1.35 * nl + 2;
+  }
+  if (st) {
+    const sz = e.fonte + 1;
+    cab.push({ t: "text", x: 0, y: topo, w: W, h: sz * 1.4, text: st, size: sz, color: "#595959", bold: false, italic: false, align: "left", valign: "top", wrap: false, maxLinhas: 1 });
+    topo += sz * 1.4 + 2;
+  }
+  if (cab.length) { cab.push({ t: "line", x1: 0, y1: topo + 2, x2: W, y2: topo + 2, color: "#000000", w: 0.75, dash: "solid" }); topo += 14; }
+  if (topo) prims.forEach((q) => deslocar(q, topo));
+  let fim = topo + H;
+  const rod = [];
+  if (fo || no) {
+    fim += 10;
+    rod.push({ t: "line", x1: 0, y1: fim, x2: W, y2: fim, color: "#BFBFBF", w: 0.75, dash: "solid" });
+    fim += 4;
+    const sz = Math.max(7, e.fonte - 1);
+    for (const [rotulo, txt] of [["Fonte: ", fo], ["Nota: ", no]]) {
+      if (!txt) continue;
+      const nl = linhasTexto(rotulo + txt, W, sz, 3);
+      rod.push({ t: "text", x: 0, y: fim, w: W, h: sz * 1.35 * nl, text: rotulo + txt, size: sz, color: "#7F7F7F", bold: false, italic: false, align: "left", valign: "top", wrap: nl > 1, maxLinhas: nl });
+      fim += sz * 1.35 * nl + 1;
+    }
+  }
+  if (!cab.length && !rod.length) return { altura: H };
+  const fundo = { t: "rect", x: -8, y: -8, w: W + 16, h: fim + 16, fill: "#FFFFFF", fundo: true };
+  tela.p = [fundo, ...cab, ...prims, ...rod];
+  return { altura: fim };
+}
+
+function deslocar(q, dy) {
+  if ("y" in q) q.y += dy;
+  if ("y1" in q) { q.y1 += dy; q.y2 += dy; }
+  if ("cy" in q) q.cy += dy;
 }
 
 // ---------------------------- Cascata IBCS -----------------------------------
@@ -267,7 +339,7 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
   if (n < 2) throw new Error("A cascata precisa de pelo menos 2 linhas (inicial e final).");
   const { lo, hi, ac, ini, fim } = calcCascata(d, col);
   if (escala) { tela.vMin = escala[0]; tela.vMax = escala[1]; }
-  else { tela.vMin = Math.min(0, ...lo); tela.vMax = Math.max(0, ...hi); }
+  else { const s = escalar(tela, { min: Math.min(0, ...lo), max: Math.max(0, ...hi) }); tela.vMin = s.min; tela.vMax = s.max; }
   if (tela.vMax === tela.vMin) tela.vMax = tela.vMin + 1;
 
   if (comFundo) tela.fundo(L, T, W, H);
@@ -313,6 +385,7 @@ function multiplos(tela, d, Wp, Hp, titulo, anot) {
     const { lo, hi } = calcCascata(d, c);
     gMin = Math.min(gMin, ...lo); gMax = Math.max(gMax, ...hi);
   }
+  ({ min: gMin, max: gMax } = escalar(tela, { min: gMin, max: gMax }));
   const porLinha = Math.min(3, d.nCol), nLinhas = Math.ceil(d.nCol / porLinha);
   const titH = titulo ? 26 : 0;
   const W = porLinha * (Wp + GX) - GX, H = titH + nLinhas * (Hp + GY) - GY;
@@ -340,7 +413,7 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
     else { lo[i] = Math.min(acum, acum + s); hi[i] = Math.max(acum, acum + s); acum += s; }
     ac[i] = acum;
   }
-  tela.vMin = Math.min(0, ...lo); tela.vMax = Math.max(0, ...hi);
+  ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: Math.min(0, ...lo), max: Math.max(0, ...hi) }));
   if (corte > 0) {
     if (tela.vMax >= -tela.vMin) { if (corte < tela.vMax) tela.vMax = corte; }
     else if (corte < -tela.vMin) tela.vMin = -corte;
@@ -423,7 +496,7 @@ function cascataEmpilhada(tela, d, W, H, titulo, corte, anot) {
 function colunas(tela, d, W, H, titulo, anot) {
   const e = tela.e, n = d.nLin;
   const tot = d.v.map((linha) => linha.reduce((a, x) => a + num(x), 0));
-  tela.vMin = 0; tela.vMax = Math.max(0, ...tot);
+  ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: 0, max: Math.max(0, ...tot) }));
   if (tela.vMax === tela.vMin) tela.vMax = 1;
   tela.fundo(0, 0, W, H);
   let titH = 0;
@@ -457,7 +530,7 @@ function comparacao(tela, d, W, H, titulo, anot) {
   const e = tela.e, n = d.nLin;
   if (n < 2) throw new Error("A comparação precisa de pelo menos 2 linhas.");
   const vals = d.v.map((linha) => num(linha[0]));
-  tela.vMin = Math.min(0, ...vals); tela.vMax = Math.max(0, ...vals);
+  ({ min: tela.vMin, max: tela.vMax } = escalar(tela, { min: Math.min(0, ...vals), max: Math.max(0, ...vals) }));
   if (tela.vMax === tela.vMin) tela.vMax = tela.vMin + 1;
   tela.fundo(0, 0, W, H);
   let titH = 0;
@@ -651,10 +724,12 @@ function tabela(tela, d, W, spec) {
 
   // ----- escalas (Δ e Δ% na MESMA escala para todas as referências: dá para comparar)
   const pontosAc = cascata ? linhas.flatMap((l) => [l.c0, l.c1]) : linhas.map((l) => l.ac);
-  const acMin = Math.min(0, ...pontosAc), acMax = Math.max(0, ...pontosAc);
+  const dNat = Math.max(...linhas.flatMap((l) => l.dvs.map(Math.abs))) || 1;
+  const esc = escalar(tela, { min: Math.min(0, ...pontosAc), max: Math.max(0, ...pontosAc), d: dNat });
+  const acMin = esc.min, acMax = esc.max;
   const acI1 = xAc + (acMin < 0 ? 46 : 6), acI2 = xAc + acW - 46;
   const xA = (v) => acI1 + ((v - acMin) / ((acMax - acMin) || 1)) * (acI2 - acI1);
-  const dMax = Math.max(...linhas.flatMap((l) => l.dvs.map(Math.abs))) || 1;
+  const dMax = esc.d;
   const dCs = xDs.map((x) => x + dW / 2), dR = dW / 2 - 44;
   const pcts = linhas.flatMap((l) => l.pcts).filter((p) => p !== null).map(Math.abs);
   let pMax = Math.max(0, ...pcts) || 1;
@@ -788,7 +863,7 @@ function roscas(tela, d, W, H, spec) {
   const e = tela.e, n = d.nCol, m = d.nLin;
   const iD = indiceDestaque(d, spec.destaque);
   const totais = d.cab.map((_, j) => d.rot.reduce((a, _, i) => a + Math.max(0, num(d.v[i][j])), 0));
-  const tMax = Math.max(...totais);
+  const tMax = escalar(tela, { min: 0, max: Math.max(...totais) }).max;
   if (!(tMax > 0)) throw new Error("As roscas precisam de valores positivos.");
   tela.fundo(0, 0, W, H);
   const fundo = tela.p[tela.p.length - 1];
@@ -890,7 +965,7 @@ function bolhas(tela, d, W, spec) {
   const nc = cols.length, iD = indiceDestaque(d, spec.destaque);
   const vol = (i, j) => Math.abs(num(d.v[i][j]));
   const vc = (i, j) => d.v[i][corDe(j)];
-  const vMax = Math.max(...d.rot.flatMap((_, i) => cols.map((j) => vol(i, j)))) || 1;
+  const vMax = escalar(tela, { min: 0, max: Math.max(...d.rot.flatMap((_, i) => cols.map((j) => vol(i, j)))) || 1 }).max;
   const cores = d.rot.flatMap((_, i) => cols.map((j) => vc(i, j))).filter((x) => x !== null);
   const cMin = Math.min(...cores), cMax = Math.max(...cores);
   const ehPct = cores.every((x) => Math.abs(x) <= 1.5) && cores.some((x) => !Number.isInteger(x));
@@ -957,6 +1032,127 @@ function bolhas(tela, d, W, spec) {
   const H = y0 + m * rowH + 4;
   fundo.h = H + 16;
   return { altura: H };
+}
+
+
+// =============================================================================
+// Título-mensagem: a conclusão do gráfico em uma frase (padrão de consultoria).
+// É uma SUGESTÃO calculada dos dados; o usuário edita no painel.
+// =============================================================================
+const pct1 = (p) => fmtPct(p, Math.abs(p) >= 1 ? 0 : 1).replace(/^-/, "−");
+const pctSemSinal = (p) => pct1(p).replace(/^[+\-−]/, "");
+const comSinal = (v) => fmtNum(v, true).replace(/^-/, "−");
+const verbo = (xs, um, varios) => (xs.length > 1 ? varios : um);
+const lista = (xs) => (xs.length <= 1 ? xs.join("") : xs.slice(0, -1).join(", ") + " e " + xs[xs.length - 1]);
+
+// frase "X% acima/abaixo de REF: drivers" a partir de impactos (positivo = favorável)
+function fraseDesvio(nome, ref, ac, refNome, drivers, inverso = false) {
+  const dv = ac - ref;
+  const fav = inverso ? dv <= 0 : dv >= 0;
+  const p = ref !== 0 ? dv / Math.abs(ref) : null;
+  const pos = drivers.filter((x) => x.imp > 0).sort((a, b) => b.imp - a.imp);
+  const neg = drivers.filter((x) => x.imp < 0).sort((a, b) => a.imp - b.imp);
+  const fmtD = (x) => `${x.r} (${comSinal(x.imp)})`;
+  if (p !== null && Math.abs(p) < 0.0005) return `${nome} em linha com ${refNome}` + (pos[0] && neg[0] ? `: ${fmtD(pos[0])} compensou ${fmtD(neg[0])}` : "");
+  const quanto = p === null ? comSinal(dv) : pctSemSinal(p);
+  const lado = dv >= 0 ? "acima" : "abaixo";
+  let t = `${nome} ${quanto} ${lado} ${/^(o|a)\s/i.test(refNome) ? "d" + refNome : "do " + refNome}`;
+  const P = pos.slice(0, 2), N = neg.slice(0, 2);
+  if (fav) {
+    if (P.length) t += `: ${lista(P.map(fmtD))} ` + (neg.length ? `${verbo(P, "compensou", "compensaram")} ${fmtD(neg[0])}` : verbo(P, "explica o resultado", "explicam o resultado"));
+  } else if (N.length) {
+    t += `: ${lista(N.map(fmtD))} ` + (pos.length ? `${verbo(N, "anulou", "anularam")} ${fmtD(pos[0])}` : verbo(N, "explica o desvio", "explicam o desvio"));
+  }
+  return t;
+}
+
+export function sugerirTitulo(d, spec) {
+  if (!d || !d.nLin) return "";
+  const nome0 = (d.cab[0] && !/^S[ée]rie \d+$/.test(d.cab[0]) ? d.cab[0] : "Total");
+  switch (spec.tipo) {
+    case "TAB": {
+      const { iAc, iRefs } = colunasTabela(spec, d);
+      const ls = d.rot.map((r, i) => {
+        const ref = num(d.v[i][iRefs[0]]), ac = num(d.v[i][iAc]);
+        return { r, ref, ac, f: flagsLinha(spec, r, ref, ac) };
+      }).filter((l) => !l.f.ocultar);
+      const res = ls.filter((l) => l.f.res);
+      const principal = res.length ? res[res.length - 1]
+        : { r: "Total", ref: ls.reduce((a, l) => a + (l.f.inv ? -l.ref : l.ref), 0), ac: ls.reduce((a, l) => a + (l.f.inv ? -l.ac : l.ac), 0), f: {} };
+      const drivers = ls.filter((l) => !l.f.res).map((l) => ({ r: l.r, imp: l.f.inv ? -(l.ac - l.ref) : l.ac - l.ref }));
+      return fraseDesvio(principal.r, principal.ref, principal.ac, d.cab[iRefs[0]] || "referência", drivers);
+    }
+    case "IBCS": {
+      const { ini, fim } = calcCascata(d, 0);
+      const drivers = d.rot.slice(1, -1).map((r, i) => ({ r, imp: num(d.v[i + 1][0]) }));
+      return fraseDesvio(nome0, ini, fim, d.rot[0], drivers, spec.custo);
+    }
+    case "IBCSM": {
+      const vs = d.cab.map((c, j) => { const { ini, fim } = calcCascata(d, j); return { c, p: ini ? (fim - ini) / Math.abs(ini) : 0 }; })
+        .sort((a, b) => b.p - a.p);
+      const melhor = vs[0], pior = vs[vs.length - 1];
+      return vs.length < 2 ? `${melhor.c} ${pct1(melhor.p)} vs ${d.rot[0]}`
+        : `${melhor.c} lidera (${pct1(melhor.p)} vs ${d.rot[0]}); ${pior.c} fica para trás (${pct1(pior.p)})`;
+    }
+    case "EMP": {
+      const tot = d.rot.map((_, i) => d.v[i].reduce((a, x) => a + num(x), 0));
+      const iT = d.tipo.map((t, i) => (t === "T" ? i : -1)).filter((i) => i >= 0);
+      const a = iT.length ? iT[0] : 0, b = iT.length > 1 ? iT[iT.length - 1] : d.nLin - 1;
+      const drivers = d.rot.map((r, i) => ({ r, imp: tot[i], t: d.tipo[i] })).filter((x, i) => i > a && i < b && x.t !== "T")
+        .sort((x, y) => Math.abs(y.imp) - Math.abs(x.imp));
+      const p = tot[a] > 0 && tot[b] >= 0 ? (tot[b] - tot[a]) / tot[a] : null; // % só faz sentido com base positiva
+      const D = drivers.slice(0, 2);
+      return `De ${d.rot[a]} (${fmtNum(tot[a]).replace(/^-/, "−")}) a ${d.rot[b]} (${fmtNum(tot[b]).replace(/^-/, "−")})` + (p !== null ? `, ${pct1(p)}` : "") +
+        (D.length ? `: ${lista(D.map((x) => `${x.r} (${comSinal(x.imp)})`))} ${verbo(D, "explica", "explicam")} a maior parte` : "");
+    }
+    case "COL": {
+      const tot = d.rot.map((_, i) => d.v[i].reduce((a, x) => a + num(x), 0));
+      const n = tot.length, a = tot[0], b = tot[n - 1];
+      const nome = d.nCol > 1 ? "Total" : nome0;
+      if (n < 2 || a <= 0 || b <= 0) return `${nome}: ${fmtNum(b)} em ${d.rot[n - 1]}`;
+      // CAGR só quando os rótulos são anos; senão (LY, BGT, 6+6…) variação simples
+      if (!d.rot.every((r) => /^(19|20)\d{2}\b/.test(String(r).trim())))
+        return `${nome} ${pct1((b - a) / a)} de ${d.rot[0]} para ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+      const g = Math.pow(b / a, 1 / (n - 1)) - 1;
+      const verbo = g >= 0 ? "cresce" : "cai";
+      let t = `${nome} ${verbo} ${pctSemSinal(g)} a.a. entre ${d.rot[0]} e ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+      if (d.nCol > 1) {
+        const cres = d.cab.map((c, j) => ({ c, dv: num(d.v[n - 1][j]) - num(d.v[0][j]) })).sort((x, y) => y.dv - x.dv);
+        t += `, com ${cres[0].c} respondendo por ${pctSemSinal(cres[0].dv / (b - a || 1))} do aumento`;
+      }
+      return t;
+    }
+    case "COMP": {
+      const n = d.nLin, a = num(d.v[0][0]), b = num(d.v[n - 1][0]);
+      const p = a ? (b - a) / Math.abs(a) : null;
+      return `${nome0} ${p === null ? comSinal(b - a) : pct1(p)} de ${d.rot[0]} para ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+    }
+    case "ROS": {
+      const tot = d.cab.map((_, j) => d.rot.reduce((a, _, i) => a + Math.max(0, num(d.v[i][j])), 0));
+      const n = d.nCol;
+      const part = (i, j) => (tot[j] ? Math.max(0, num(d.v[i][j])) / tot[j] : 0);
+      let i = d.rot.indexOf(spec.destaque);
+      if (i < 0) i = d.rot.map((_, k) => k).sort((x, y) => Math.abs(part(y, n - 1) - part(y, 0)) - Math.abs(part(x, n - 1) - part(x, 0)))[0];
+      const p0 = part(i, 0), p1 = part(i, n - 1);
+      const verbo = p1 > p0 + 0.0005 ? "ganha participação" : p1 < p0 - 0.0005 ? "perde participação" : "mantém a participação";
+      return n < 2 ? `${d.rot[i]} responde por ${pctSemSinal(p1)} do total`
+        : `${d.rot[i]} ${verbo}: de ${pctSemSinal(p0)} para ${pctSemSinal(p1)} do total (${d.cab[0]} → ${d.cab[n - 1]})`;
+    }
+    case "BOL": {
+      const { cols } = blocosBolhas(d);
+      const somas = d.rot.map((r, i) => ({ r, s: cols.reduce((a, j) => a + num(d.v[i][j]), 0) }));
+      const temNeg = d.rot.some((_, i) => cols.some((j) => num(d.v[i][j]) < 0));
+      if (temNeg) {
+        const ord = [...somas].sort((a, b) => a.s - b.s), pior = ord[0], melhor = ord[ord.length - 1];
+        return `${pior.r} concentra o maior desvio negativo (${comSinal(pior.s)} no período); ${melhor.r} o maior positivo (${comSinal(melhor.s)})`;
+      }
+      const total = somas.reduce((a, x) => a + x.s, 0) || 1;
+      const top = [...somas].sort((a, b) => b.s - a.s)[0];
+      return `${top.r} responde por ${pctSemSinal(top.s / total)} do total`;
+    }
+    default:
+      return "";
+  }
 }
 
 // ---------------------------- Anotações --------------------------------------
