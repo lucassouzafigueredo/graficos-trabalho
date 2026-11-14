@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.6.0">
+<link rel="stylesheet" href="taskpane.css?v=1.7.0">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
@@ -67,6 +67,7 @@
       <option value="TAB">Tabela de variações (DRE, BU…)</option>
       <option value="ROS">Roscas proporcionais</option>
       <option value="BOL">Matriz de bolhas</option>
+      <option value="PVM">Ponte Preço / Volume / Mix</option>
     </select>
   </label>
   <label for="titulo">Título-mensagem (a conclusão, não o assunto)</label>
@@ -202,6 +203,17 @@
   <div class="linha"><button id="btnLinhasAuto" class="sec">Voltar todas ao automático</button></div>
 </section>
 
+<section id="secPVM" hidden>
+  <h2>Preço / Volume / Mix</h2>
+  <p class="muted">Layout: <b>Produto | Volume BGT | Preço BGT | Volume Real | Preço Real</b>. No lugar do preço pode vir a <b>Receita</b>: o preço vira Receita ÷ Volume. A linha de total, se houver, é ignorada. Os nomes dos cenários (BGT, Real…) vêm dos cabeçalhos.</p>
+  <label class="check"><input type="checkbox" id="pvmMix" checked> Separar o efeito <b>Mix</b> (só faz sentido se os volumes estão na mesma unidade)</label>
+  <label class="check"><input type="checkbox" id="pvmZoom" checked> Cortar o eixo (<b>//</b>) para dar zoom nos efeitos</label>
+  <label>Abrir o efeito preço por produto
+    <select id="pvmDetalhe"><option value="0">Não (uma barra de Preço)</option><option value="3">Top 3 + demais</option><option value="5">Top 5 + demais</option></select>
+  </label>
+  <p class="muted">Volume = (V real − V BGT) × preço médio BGT · Mix = efeito de vender mais produtos caros ou baratos · Preço = (p real − p BGT) × v real. A soma fecha exatamente com a variação da receita.</p>
+</section>
+
 <section id="secDestaque" hidden>
   <h2 id="tituloDestaque">Roscas</h2>
   <p class="muted" id="dicaDestaque"></p>
@@ -259,6 +271,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.6.0"></script>
+<script type="module" src="taskpane.js?v=1.7.0"></script>
 </body>
 </html>

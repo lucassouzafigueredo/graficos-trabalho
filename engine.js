@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.6.0";
+import { fmtNum, fmtPct } from "./formats.js?v=1.7.0";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -17,13 +17,14 @@ export const TIPOS = {
   TAB: { nome: "Tabela de variações", W: 640, H: 0, comTipo: false },
   ROS: { nome: "Roscas proporcionais", W: 600, H: 260, comTipo: false },
   BOL: { nome: "Matriz de bolhas", W: 600, H: 0, comTipo: false },
+  PVM: { nome: "Ponte Preço / Volume / Mix", W: 460, H: 260, comTipo: false },
 };
 
 // Anotações que já vêm ligadas em cada tipo de gráfico
 export function anotacoesPadrao(tipo) {
   const v = () => ({ on: false, de: 1, para: 0, modo: "P", balao: false });
   const a = { v: [v(), v()], cagr: { on: false, de: 1, para: 0 } };
-  if (tipo === "IBCS" || tipo === "IBCSM") a.v[0].on = true;
+  if (tipo === "IBCS" || tipo === "IBCSM" || tipo === "PVM") a.v[0].on = true;
   if (tipo === "COMP") { a.v[0].on = true; a.v[0].balao = true; }
   if (tipo === "COL") a.cagr.on = true;
   return a;
@@ -236,6 +237,10 @@ export function montarGrafico(dados, specOrig, estilo) {
       altura = r.altura; largura = r.largura;
       break;
     }
+    case "PVM":
+      tela.zoom = spec.pvmZoom !== false;
+      cascataIBCS(tela, dadosPVM(pvmCalcular(dados, spec), spec), 0, 0, 0, W, H, "", null, anot, true);
+      break;
     case "ROS":
       altura = roscas(tela, dados, W, H, spec);
       break;
@@ -341,6 +346,15 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
   if (escala) { tela.vMin = escala[0]; tela.vMax = escala[1]; }
   else { const s = escalar(tela, { min: Math.min(0, ...lo), max: Math.max(0, ...hi) }); tela.vMin = s.min; tela.vMax = s.max; }
   if (tela.vMax === tela.vMin) tela.vMax = tela.vMin + 1;
+  // zoom (ponte PVM): corta o eixo abaixo do menor nível para os efeitos aparecerem; totais ganham "//"
+  let cortado = false;
+  if (tela.zoom && !escala && Math.min(...lo) >= 0) {
+    const niveis = ac.slice(1, -1).concat(lo.slice(1, -1), [ini, fim]);
+    const nMin = Math.min(...niveis), amp = Math.max(...hi) - nMin;
+    const base = Math.max(0, nMin - Math.max(amp * 1.2, Math.max(...hi) * 0.04));
+    if (base > Math.max(...hi) * 0.15) { tela.vMin = base; cortado = true; }
+  }
+  const Yc = (v) => tela.Y(tela.clip(v));
 
   if (comFundo) tela.fundo(L, T, W, H);
   let titH = 0;
@@ -360,10 +374,12 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
     const cx = xL + catW * (i + 0.5), bx = cx - bw / 2;
     tela.regBarra(cx, ac[i], ac[i]);
     if (i === 0) {
-      rectAparencia(tela, bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: "#FFFFFF", listra: e.total, stroke: e.total });
+      rectAparencia(tela, bx, Yc(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: "#FFFFFF", listra: e.total, stroke: e.total });
+      if (cortado) tela.quebra(bx, bw, tela.pBot - 16);
       rotulo(fmtNum(ini), ini >= 0, cx, i);
     } else if (i === n - 1) {
-      rectAparencia(tela, bx, tela.Y(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: e.total });
+      rectAparencia(tela, bx, Yc(lo[i]), bw, tela.Y(hi[i]), ap[i] ?? { fill: e.total });
+      if (cortado) tela.quebra(bx, bw, tela.pBot - 16);
       rotulo(fmtNum(fim), fim >= 0, cx, i);
     } else {
       const dv = ac[i] - ac[i - 1];
@@ -374,7 +390,7 @@ function cascataIBCS(tela, d, col, L, T, W, H, titulo, escala, anot, comFundo) {
     if (i < n - 1) tela.line(bx + bw, tela.Y(ac[i]), bx + catW, tela.Y(ac[i]), "#AFAFAF", 0.75);
     tela.text(d.rot[i], cx, T + H - 26, "top", catW, { size: e.fonte + 1, wrap: true });
   }
-  tela.line(xL, tela.Y(0), xR, tela.Y(0), "#404040", 1.5);
+  tela.line(xL, Yc(0), xR, Yc(0), "#404040", 1.5);
   anotacoes(tela, anot, true, xR);
 }
 
@@ -1036,6 +1052,82 @@ function bolhas(tela, d, W, spec) {
 
 
 // =============================================================================
+// Ponte Preço / Volume / Mix
+//   Layout: Produto | Volume REF | Preço REF | Volume ATUAL | Preço ATUAL
+//   (Receita no lugar de Preço também serve: o preço vira Receita ÷ Volume)
+//   Volume = (V1 − V0) × P0 médio          (quanto a mais se vendeu, ao preço médio de referência)
+//   Mix    = Σ v1·p0 − V1 × P0 médio       (vendeu-se mais dos produtos caros ou dos baratos)
+//   Preço  = Σ (p1 − p0) · v1              (preço praticado contra o de referência)
+//   Volume + Mix + Preço = Receita ATUAL − Receita REF (fecha exato)
+// Produto novo (sem volume na referência) entra sem efeito preço: p0 = p1.
+// =============================================================================
+const RX_PRECO = /PRECO|PRICE|\bPM\b|TICKET|UNITARIO/;
+const RX_RECEITA = /RECEITA|FATURAMENTO|VENDAS?\b|REVENUE|SALES|\bROL\b|\bROB\b/;
+const RX_PALAVRAS_PVM = /\b(VOLUMES?|VOL\.?|QTDE?\.?|QUANTIDADES?|TONELADAS?|TON|UNIDADES?|PRECOS?( MEDIOS?)?|PRICE|PM|TICKET( MEDIO)?|RECEITAS?|FATURAMENTO|VENDAS?|REVENUE|SALES|ROL|ROB|R\$\s*\/\s*\S+|UNITARIO)\b/g;
+
+export function pvmCalcular(d, spec = {}) {
+  if (d.nCol < 4) throw new Error("Layout da ponte PVM: Produto | Volume BGT | Preço BGT | Volume Real | Preço Real (ou Receita no lugar de Preço).");
+  const tipoCol = (c) => { const n = normalizar(c); return RX_PRECO.test(n) ? "p" : RX_RECEITA.test(n) ? "r" : "v"; };
+  const par = (a, b) => {
+    let ka = tipoCol(d.cab[a]), kb = tipoCol(d.cab[b]);
+    if (ka === "v" && kb === "v") kb = "p"; // sem pista no nome: Volume, Preço
+    if (ka !== "v" && kb !== "v") ka = "v";
+    return ka === "v" ? { iv: a, ix: b, k: kb } : { iv: b, ix: a, k: ka };
+  };
+  const p0c = par(0, 1), p1c = par(2, 3);
+  const nomeCen = (i, padrao) => {
+    const t = normalizar(d.cab[i]).replace(RX_PALAVRAS_PVM, " ").replace(/[^A-Z0-9+]+/g, " ").trim();
+    if (!t) return padrao;
+    // devolve o trecho original correspondente (mantém acentos/maiúsculas do usuário)
+    const orig = String(d.cab[i]).split(/\s+/).filter((w) => t.split(" ").includes(normalizar(w).replace(/[^A-Z0-9+]/g, "")));
+    return orig.join(" ") || padrao;
+  };
+  const refNome = nomeCen(p0c.iv, "Ref") , acNome = nomeCen(p1c.iv, "Real");
+  const precoDe = (i, c) => {
+    const v = num(d.v[i][c.iv]), x = num(d.v[i][c.ix]);
+    return c.k === "r" ? (v ? x / v : null) : x;
+  };
+  const prods = [];
+  d.rot.forEach((r, i) => {
+    if (RX_RESULTADO.test(normalizar(r))) return; // linha de total não entra (contaria em dobro)
+    const v0 = num(d.v[i][p0c.iv]), v1 = num(d.v[i][p1c.iv]);
+    let p0 = precoDe(i, p0c), p1 = precoDe(i, p1c);
+    if (!v0 || p0 === null) p0 = p1 ?? 0;
+    if (!v1 || p1 === null) p1 = p0;
+    const r0 = receitaDe(i, p0c, v0, p0), r1 = receitaDe(i, p1c, v1, p1);
+    prods.push({ r, v0, v1, p0, p1, r0, r1 });
+  });
+  function receitaDe(i, c, v, p) { return c.k === "r" ? num(d.v[i][c.ix]) : v * p; }
+  if (!prods.length) throw new Error("Não há produtos na ponte PVM.");
+  const R0 = prods.reduce((a, x) => a + x.r0, 0), R1 = prods.reduce((a, x) => a + x.r1, 0);
+  const V0 = prods.reduce((a, x) => a + x.v0, 0), V1 = prods.reduce((a, x) => a + x.v1, 0);
+  const P0 = V0 ? R0 / V0 : 0;
+  prods.forEach((x) => { x.preco = (x.p1 - x.p0) * x.v1; x.volMix = (x.v1 - x.v0) * x.p0; });
+  const preco = prods.reduce((a, x) => a + x.preco, 0);
+  let volume, mix;
+  if (spec.pvmMix === false) { volume = prods.reduce((a, x) => a + x.volMix, 0); mix = 0; }
+  else { volume = (V1 - V0) * P0; mix = prods.reduce((a, x) => a + x.v1 * x.p0, 0) - V1 * P0; }
+  // resíduo de arredondamento / receitas informadas sem volume vai para o preço (fecha a ponte)
+  const residuo = R1 - R0 - (volume + mix + preco);
+  return { refNome, acNome, R0, R1, V0, V1, volume, mix: mix, preco: preco + residuo, prods, comMix: spec.pvmMix !== false };
+}
+
+// Dados sintéticos para a cascata IBCS: REF → Volume → Mix → Preço (ou preço por produto) → ATUAL
+function dadosPVM(c, spec) {
+  const rot = [c.refNome, "Volume"], v = [[c.R0], [c.volume]];
+  if (c.comMix) { rot.push("Mix"); v.push([c.mix]); }
+  const n = Math.max(0, +spec.pvmDetalhe || 0);
+  if (n > 0) {
+    const ord = [...c.prods].sort((a, b) => Math.abs(b.preco) - Math.abs(a.preco));
+    const top = ord.slice(0, n), resto = ord.slice(n);
+    top.forEach((x) => { rot.push(`Preço ${x.r}`); v.push([x.preco]); });
+    if (resto.length) { rot.push(`Preço – demais (${resto.length})`); v.push([c.preco - top.reduce((a, x) => a + x.preco, 0)]); }
+  } else { rot.push("Preço"); v.push([c.preco]); }
+  rot.push(c.acNome); v.push([c.R1]);
+  return { rot, cab: ["Receita"], v, tipo: [], nLin: rot.length, nCol: 1, cabTextos: [], textos: rot.map(() => []) };
+}
+
+// =============================================================================
 // Título-mensagem: a conclusão do gráfico em uma frase (padrão de consultoria).
 // É uma SUGESTÃO calculada dos dados; o usuário edita no painel.
 // =============================================================================
@@ -1081,6 +1173,12 @@ export function sugerirTitulo(d, spec) {
         : { r: "Total", ref: ls.reduce((a, l) => a + (l.f.inv ? -l.ref : l.ref), 0), ac: ls.reduce((a, l) => a + (l.f.inv ? -l.ac : l.ac), 0), f: {} };
       const drivers = ls.filter((l) => !l.f.res).map((l) => ({ r: l.r, imp: l.f.inv ? -(l.ac - l.ref) : l.ac - l.ref }));
       return fraseDesvio(principal.r, principal.ref, principal.ac, d.cab[iRefs[0]] || "referência", drivers);
+    }
+    case "PVM": {
+      const c = pvmCalcular(d, spec);
+      const drivers = [{ r: "volume", imp: c.volume }, { r: "preço", imp: c.preco }];
+      if (c.comMix) drivers.push({ r: "mix", imp: c.mix });
+      return fraseDesvio("Receita", c.R0, c.R1, c.refNome, drivers.filter((x) => Math.abs(x.imp) > 1e-9));
     }
     case "IBCS": {
       const { ini, fim } = calcCascata(d, 0);

@@ -1,17 +1,17 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.6.0";
-import { renderSVG } from "./render-svg.js?v=1.6.0";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.6.0";
+import { TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.7.0";
+import { renderSVG } from "./render-svg.js?v=1.7.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.7.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.6.0";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.6.0";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.6.0";
+} from "./styles.js?v=1.7.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.7.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.7.0";
 
-const VERSAO = "1.6.0";
+const VERSAO = "1.7.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -231,8 +231,9 @@ function mostrarSecoesDoTipo() {
   const t = st.spec.tipo, tab = t === "TAB", dest = t === "ROS" || t === "BOL";
   $("secTabela").hidden = !tab;
   $("secDestaque").hidden = !dest;
+  $("secPVM").hidden = t !== "PVM";
   $("secAnot").hidden = tab || dest;
-  $("secCores").hidden = tab || dest;
+  $("secCores").hidden = tab || dest || t === "PVM";
   $("lblAltura").hidden = tab || t === "BOL";
   $("lblBolValores").hidden = t !== "BOL";
   $("lblSeparar").hidden = t !== "ROS";
@@ -269,6 +270,9 @@ function escreverForm() {
   desenharColunasTabela();
   desenharLinhasTabela();
   desenharDestaque();
+  $("pvmMix").checked = s.pvmMix !== false;
+  $("pvmZoom").checked = s.pvmZoom !== false;
+  $("pvmDetalhe").value = String(s.pvmDetalhe ?? 0);
   $("largura").value = s.W; $("altura").value = s.H;
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => (r.checked = r.value === modo));
@@ -312,6 +316,7 @@ function lerForm() {
   lerCoresBarras();
   lerColunasTabela();
   lerLinhasTabela();
+  if (s.tipo === "PVM") { s.pvmMix = $("pvmMix").checked; s.pvmZoom = $("pvmZoom").checked; s.pvmDetalhe = +$("pvmDetalhe").value || 0; }
   if (s.tipo === "ROS" || s.tipo === "BOL") { s.destaque = $("destaque").value || undefined; s.valores = $("bolValores").checked; s.separar = $("rosSeparar").checked; }
   s.unidade = $("tabUnidade").value;
   s.casas = $("tabCasas").value === "" ? undefined : +$("tabCasas").value;
@@ -663,6 +668,7 @@ async function gerarExemplos() {
         modo: modoPadrao(),
         cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
         ordem: ex.ordem ?? "planilha", colunas: ex.colunas, destaque: ex.destaque ?? demo.destaque,
+        pvmDetalhe: ex.pvmDetalhe ?? 0,
         subtitulo: ex.subtitulo, fonteDados: ex.fonteDados, nota: ex.nota, grupoEscala: ex.grupo,
         escalaFixa: ex.grupo ? escalasExemplos[ex.grupo] : null,
       };
@@ -803,7 +809,7 @@ function ligarEventos() {
   ["tabUnidade", "tabCasas", "tabSuprimir", "tabCascata", "tabComent", "tabComModo", "tabTopN", "tabOutros",
     "tabAtual", "tabOrdem", "tabVisRef", "tabVisAc", "tabVisAbs", "tabVisPct"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabRefs").addEventListener("change", reagir);
-  ["destaque", "bolValores", "rosSeparar"].forEach((id) => $(id).addEventListener("change", reagir));
+  ["destaque", "bolValores", "rosSeparar", "pvmMix", "pvmZoom", "pvmDetalhe"].forEach((id) => $(id).addEventListener("change", reagir));
   $("tabTopN").addEventListener("input", reagir);
   $("linhasTabela").addEventListener("change", reagir);
   $("btnLinhasAuto").onclick = () => { st.spec.linhas = {}; desenharLinhasTabela(); preview(); };

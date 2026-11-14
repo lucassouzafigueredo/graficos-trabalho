@@ -63,6 +63,10 @@ export const DEMOS = [
     ["Ano", "Receita"], ["2022", 410], ["2023", 452], ["2024", 498], ["2025", 541]] },
   { tipo: "COL", titulo: "Receita – BU Norte, R$ mi", estilo: "cons-azul", semCagr: true, valores: [
     ["Ano", "Receita"], ["2022", 120], ["2023", 141], ["2024", 168], ["2025", 196]] },
+  { tipo: "PVM", titulo: "Receita – ponte Preço / Volume / Mix, BGT → Real, R$ mil", estilo: "orc-fc", valores: [
+    ["Produto", "Volume BGT", "Preço BGT", "Volume Real", "Preço Real"],
+    ["Premium", 1200, 85, 1050, 89], ["Standard", 3400, 52, 3650, 51.5], ["Econômico", 2100, 31, 2600, 30],
+    ["Linha nova", 0, 0, 300, 64], ["Exportação", 800, 47, 760, 50.5]] },
 ];
 
 // Texto exibido de cada célula (o Excel devolve range.text formatado)
@@ -102,4 +106,6 @@ export const EXEMPLOS = [
   { demo: 15, estilo: "cons-azul", grupo: "BUs", subtitulo: "Mesma escala do gráfico acima (grupo “BUs”)",
     anot: { v: [{ on: false, de: 1, para: 0, modo: "P", balao: false }, { on: false, de: 1, para: 0, modo: "P", balao: false }], cagr: { on: true, de: 1, para: 4 } },
     descricao: "18. Mesma escala – sem o grupo, a BU Norte pareceria do mesmo tamanho que a Sul" },
+  { demo: 16, estilo: "orc-fc", descricao: "19. Ponte Preço / Volume / Mix – BGT → Real: volume, mix (venda de mais produtos baratos) e preço" },
+  { demo: 16, estilo: "orc-fc", pvmDetalhe: 3, descricao: "20. PVM com o preço aberto por produto (top 3 + demais)" },
 ];
