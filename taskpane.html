@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gráficos FP&amp;A</title>
+<link rel="stylesheet" href="taskpane.css?v=1.8.2">
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+<header>
+  <h1>Gráficos FP&amp;A</h1>
+  <span id="versao" class="muted"></span>
+</header>
+
+<div id="avisoVersao" class="aviso" hidden><span></span> <button>Atualizar agora</button></div>
+
+<div id="avisoDemo" class="aviso" hidden>
+  Modo demonstração (fora do Excel). Escolha um exemplo:
+  <select id="demoSel"></select>
+</div>
+
+<!-- GRÁFICOS EXISTENTES -->
+<section>
+  <h2>Gráficos nesta planilha</h2>
+  <div class="linha">
+    <select id="listaGraficos"><option value="">— novo gráfico —</option></select>
+    <button id="btnRecarregarLista" class="icone" title="Recarregar lista">⟳</button>
+  </div>
+  <div class="linha">
+    <button id="btnAtualizarTodos" class="sec">Atualizar todos com os dados atuais</button>
+  </div>
+  <div class="linha">
+    <button id="btnExemplos" class="sec">Gerar planilha de exemplos</button>
+  </div>
+  <p class="sub">Modelos de página</p>
+  <div class="linha">
+    <select id="modeloSel"></select>
+    <button id="btnModelo" class="sec">Gerar</button>
+  </div>
+</section>
+
+<!-- DADOS -->
+<section>
+  <h2>Dados</h2>
+  <div class="linha">
+    <input id="endereco" readonly placeholder="selecione os dados na planilha">
+    <button id="btnSelecao">Usar seleção</button>
+  </div>
+  <p id="resumoDados" class="muted"></p>
+  <label class="check"><input type="checkbox" id="autoLinhas" checked> Ajustar às linhas da tabela (inclui/exclui linhas até a 1ª linha vazia)</label>
+  <label class="check"><input type="checkbox" id="autoAtualizar" checked> Atualizar gráficos automaticamente quando os números mudarem</label>
+  <label class="check"><input type="checkbox" id="autoAbrir"> Abrir este painel sempre que este arquivo for aberto (salve o arquivo depois)</label>
+</section>
+
+<!-- PRÉ-VISUALIZAÇÃO -->
+<section>
+  <h2>Pré-visualização</h2>
+  <div id="preview" class="preview"><p class="muted">Selecione os dados e clique em “Usar seleção”.</p></div>
+</section>
+
+<!-- GRÁFICO -->
+<section>
+  <h2>Gráfico</h2>
+  <label>Tipo
+    <select id="tipo">
+      <option value="IBCS">Cascata IBCS (FC → AC)</option>
+      <option value="IBCSM">Cascata IBCS – múltiplos</option>
+      <option value="EMP">Cascata empilhada</option>
+      <option value="COL">Colunas</option>
+      <option value="COMP">Comparação</option>
+      <option value="TAB">Tabela de variações (DRE, BU…)</option>
+      <option value="ROS">Roscas proporcionais</option>
+      <option value="BOL">Matriz de bolhas</option>
+      <option value="PVM">Ponte Preço / Volume / Mix</option>
+      <option value="CARD">Cartão de fechamento</option>
+      <option value="CARDM">Cartões múltiplos (mix)</option>
+    </select>
+  </label>
+  <label for="titulo">Título-mensagem (a conclusão, não o assunto)</label>
+  <div class="linha">
+    <input id="titulo" placeholder="ex.: EBITDA 1% acima do BGT, puxado por…">
+    <button id="btnSugerirTitulo" title="Sugere a conclusão a partir dos dados; edite à vontade">Sugerir</button>
+  </div>
+  <label>Subtítulo <input id="subtitulo" placeholder="ex.: DRE, R$ mil – outubro/26"></label>
+  <div class="duas">
+    <label>Fonte <input id="fonteDados" placeholder="ex.: SAP, fechamento"></label>
+    <label>Nota <input id="nota" placeholder="ex.: sem IFRS 16"></label>
+  </div>
+  <label>Mesma escala que o grupo
+    <input id="grupoEscala" list="gruposEscala" placeholder="vazio = escala própria; ex.: BUs">
+  </label>
+  <datalist id="gruposEscala"></datalist>
+  <p class="muted" id="dicaGrupo" hidden></p>
+  <div id="lblCorte">
+    <p class="sub">Corte do eixo (<b>//</b>)</p>
+    <div class="segmentado">
+      <label><input type="radio" name="corteModo" value="nenhum"> Sem corte</label>
+      <label><input type="radio" name="corteModo" value="auto"> Automático</label>
+      <label><input type="radio" name="corteModo" value="manual"> Valor</label>
+    </div>
+    <label id="lblCorteValor"><span id="txtCorteValor">O eixo começa em</span>
+      <input id="corte" type="number" placeholder="ex.: 900">
+    </label>
+    <p class="muted" id="dicaCorte"></p>
+  </div>
+  <p class="sub">Desenho</p>
+  <div class="segmentado">
+    <label title="O gráfico entra como uma única imagem de alta resolução: muito mais rápido. Para mudar algo, use o painel (Aplicar)."><input type="radio" name="modoDesenho" value="imagem"> Rápido (imagem)</label>
+    <label title="Cada barra, texto e linha vira uma forma do Excel, editável à mão. Mais lento."><input type="radio" name="modoDesenho" value="formas"> Editável (formas)</label>
+  </div>
+  <div class="duas">
+    <label>Largura <input id="largura" type="number" min="150" step="10"></label>
+    <label id="lblAltura">Altura <input id="altura" type="number" min="100" step="10"></label>
+  </div>
+</section>
+
+<!-- ESTILO -->
+<section>
+  <h2>Estilo</h2>
+  <div class="linha">
+    <select id="estilo"></select>
+    <button id="btnEditarEstilo" class="sec">Editar / novo</button>
+  </div>
+  <div id="editorEstilo" class="editor" hidden>
+    <label>Nome do estilo <input id="estNome"></label>
+    <div class="cores">
+      <label><input type="color" id="estTotal"> Totais / Real</label>
+      <label><input type="color" id="estDelta"> Variação neutra</label>
+      <label><input type="color" id="estPos"> Variação favorável</label>
+      <label><input type="color" id="estNeg"> Variação desfavorável</label>
+    </div>
+    <label class="check"><input type="checkbox" id="estPorSinal"> Colorir variações pelo sinal (verde/vermelho)</label>
+    <p class="sub">Pilhas (base → topo)</p>
+    <div class="cores seis" id="estPilha"></div>
+    <p class="sub">Colunas / comparação</p>
+    <div class="cores quatro" id="estColunas"></div>
+    <label class="check"><input type="checkbox" id="estCenarios"> Cores por cenário (Real / Orçamento / Forecast)</label>
+    <div id="estCenariosBox" class="cores">
+      <label><input type="color" id="cenReal"> Real / LY</label>
+      <label><input type="color" id="cenOrcF"><input type="color" id="cenOrcL"> Orçamento</label>
+      <label><input type="color" id="cenFc1F"><input type="color" id="cenFc1L"> Forecast 1</label>
+      <label><input type="color" id="cenFc2F"><input type="color" id="cenFc2L"> Forecast 2+</label>
+    </div>
+    <p class="muted">Orçamento e Forecast: fundo + listra. O cenário é reconhecido pelo rótulo: BGT/Orçamento; 6+6, 9+3, FC/Forecast; o resto é Real.</p>
+    <div class="linha botoes">
+      <button id="btnSalvarEstilo">Salvar estilo</button>
+      <button id="btnExcluirEstilo" class="sec">Excluir</button>
+      <button id="btnFecharEditor" class="sec">Fechar</button>
+    </div>
+    <div class="linha botoes">
+      <button id="btnExportar" class="sec">Exportar estilos (.json)</button>
+      <label class="botao sec">Importar…<input type="file" id="arqImportar" accept=".json" hidden></label>
+    </div>
+    <p class="muted">Dica: exporte para uma pasta do OneDrive/SharePoint e peça para o time importar. Assim todos usam as mesmas cores.</p>
+  </div>
+</section>
+
+<!-- CORES DAS BARRAS -->
+<section id="secCores">
+  <h2>Cores das barras</h2>
+  <p class="muted">Escolha a aparência de cada barra. “Automática” segue o estilo. A escolha fica gravada pelo nome da barra.</p>
+  <div id="coresBarras"><p class="muted">Selecione os dados primeiro.</p></div>
+  <div class="linha"><button id="btnCoresAuto" class="sec">Voltar todas para automática</button></div>
+</section>
+
+<!-- ANOTAÇÕES -->
+<section id="secTabela" hidden>
+  <h2>Linhas da tabela</h2>
+  <p class="muted">Layout: <b>Conta | Referência(s) (ex.: BGT, FC) | Atual (ex.: Real)</b>. O padrão de cada linha vem do nome da conta; corrija aqui se precisar.</p>
+  <div class="duas">
+    <label>Coluna atual
+      <select id="tabAtual"></select>
+    </label>
+    <label>Ordenar
+      <select id="tabOrdem">
+        <option value="planilha">Ordem da planilha</option>
+        <option value="abs">Maior desvio (|Δ|)</option>
+        <option value="fav">Favorável → desfavorável</option>
+        <option value="pct">Maior desvio %</option>
+      </select>
+    </label>
+  </div>
+  <div class="sub">Comparar contra (lado a lado)</div>
+  <div id="tabRefs" class="checks"></div>
+  <div class="sub">Colunas visíveis</div>
+  <div class="checks">
+    <label class="check"><input type="checkbox" id="tabVisRef" checked> Referência</label>
+    <label class="check"><input type="checkbox" id="tabVisAc" checked> Atual</label>
+    <label class="check"><input type="checkbox" id="tabVisAbs" checked> Δ</label>
+    <label class="check"><input type="checkbox" id="tabVisPct" checked> Δ%</label>
+  </div>
+  <p class="muted">Ao ordenar, as linhas mudam de lugar só dentro de cada bloco entre subtotais, então a DRE continua fechando.</p>
+  <div class="duas">
+    <label>Unidade
+      <select id="tabUnidade">
+        <option value="auto">Automática</option><option value="un">Número cheio</option>
+        <option value="mil">Milhares (÷ 1.000)</option><option value="mi">Milhões (÷ 1.000.000)</option>
+      </select>
+    </label>
+    <label>Casas decimais
+      <select id="tabCasas"><option value="">Automático</option><option value="0">0</option><option value="1">1</option><option value="2">2</option></select>
+    </label>
+  </div>
+  <label class="check"><input type="checkbox" id="tabSuprimir" checked> Variações % muito grandes viram seta (não achatam as demais)</label>
+  <label class="check"><input type="checkbox" id="tabCascata"> Coluna atual como <b>cascata</b> (zera nos subtotais)</label>
+  <label class="check"><input type="checkbox" id="tabComent" checked> Mostrar <b>comentários</b> (coluna de texto, ex.: “Comentário”)</label>
+  <div class="duas">
+    <label>Variação no comentário
+      <select id="tabComModo"><option value="B">% e valor</option><option value="P">%</option><option value="A">Valor</option></select>
+    </label>
+    <label>Top N (0 = todas)
+      <input id="tabTopN" type="number" min="0" step="1" value="0">
+    </label>
+  </div>
+  <label class="check"><input type="checkbox" id="tabOutros" checked> Agrupar as demais linhas em “Outros”</label>
+  <div class="linhas-cab"><span>Conta</span><span title="Custo/despesa: queda é favorável (verde)">Custo</span><span title="Subtotal: negrito, “=” e linha separadora">Result.</span><span>Negr.</span><span>Ocultar</span></div>
+  <div id="linhasTabela"></div>
+  <div class="linha"><button id="btnLinhasAuto" class="sec">Voltar todas ao automático</button></div>
+</section>
+
+<section id="secCartao" hidden>
+  <h2>Cartão</h2>
+  <p class="muted" id="dicaCartao"></p>
+  <div class="duas">
+    <label>Cabeçalho
+      <select id="cartCab"><option value="">Padrão</option><option value="escuro">Caixa escura</option><option value="claro">Caixa clara</option><option value="sublinhado">Sublinhado</option><option value="nenhum">Nenhum</option></select>
+    </label>
+    <label>Números
+      <select id="cartFmt"><option value="">Do estilo</option><option value="en">1,234.5</option><option value="br">1.234,5</option></select>
+    </label>
+  </div>
+  <label id="lblPorLinha">Cartões por linha <input id="cartPorLinha" type="number" min="1" max="6" step="1" placeholder="automático"></label>
+  <label id="lblComentCartao">Comentário (opcional; sobrepõe a coluna de texto)
+    <textarea id="cartComent" rows="3" placeholder="**Destaque**, texto… (uma linha por parágrafo; **negrito**)"></textarea>
+  </label>
+</section>
+
+<section id="secPVM" hidden>
+  <h2>Preço / Volume / Mix</h2>
+  <p class="muted">Layout: <b>Produto | Volume BGT | Preço BGT | Volume Real | Preço Real</b>. No lugar do preço pode vir a <b>Receita</b>: o preço vira Receita ÷ Volume. A linha de total, se houver, é ignorada. Os nomes dos cenários (BGT, Real…) vêm dos cabeçalhos.</p>
+  <label class="check"><input type="checkbox" id="pvmMix" checked> Separar o efeito <b>Mix</b> (só faz sentido se os volumes estão na mesma unidade)</label>
+  <label>Abrir o efeito preço por produto
+    <select id="pvmDetalhe"><option value="0">Não (uma barra de Preço)</option><option value="3">Top 3 + demais</option><option value="5">Top 5 + demais</option></select>
+  </label>
+  <p class="muted">Volume = (V real − V BGT) × preço médio BGT · Mix = efeito de vender mais produtos caros ou baratos · Preço = (p real − p BGT) × v real. A soma fecha exatamente com a variação da receita.</p>
+</section>
+
+<section id="secDestaque" hidden>
+  <h2 id="tituloDestaque">Roscas</h2>
+  <p class="muted" id="dicaDestaque"></p>
+  <label>Linha em destaque
+    <select id="destaque"></select>
+  </label>
+  <label class="check" id="lblSeparar"><input type="checkbox" id="rosSeparar" checked> Separar a fatia destacada do resto da rosca</label>
+  <label class="check" id="lblBolValores"><input type="checkbox" id="bolValores" checked> Mostrar os valores ao lado das bolhas</label>
+</section>
+
+<section id="secAnot">
+  <h2>Variações e CAGR</h2>
+  <div class="anot" data-k="0">
+    <label class="check titulo"><input type="checkbox" class="on"> Variação 1</label>
+    <div class="corpo">
+      <div class="duas">
+        <label>De <select class="de"></select></label>
+        <label>Para <select class="para"></select></label>
+      </div>
+      <div class="segmentado">
+        <label><input type="radio" name="modo0" value="P"> %</label>
+        <label><input type="radio" name="modo0" value="A"> Valor</label>
+        <label><input type="radio" name="modo0" value="B"> Ambos</label>
+      </div>
+      <label class="check"><input type="checkbox" class="balao"> Balão (callout)</label>
+    </div>
+  </div>
+  <div class="anot" data-k="1">
+    <label class="check titulo"><input type="checkbox" class="on"> Variação 2</label>
+    <div class="corpo">
+      <div class="duas">
+        <label>De <select class="de"></select></label>
+        <label>Para <select class="para"></select></label>
+      </div>
+      <div class="segmentado">
+        <label><input type="radio" name="modo1" value="P"> %</label>
+        <label><input type="radio" name="modo1" value="A"> Valor</label>
+        <label><input type="radio" name="modo1" value="B"> Ambos</label>
+      </div>
+      <label class="check"><input type="checkbox" class="balao"> Balão (callout)</label>
+    </div>
+  </div>
+  <div class="anot" id="anotCagr">
+    <label class="check titulo"><input type="checkbox" id="cagrOn"> Linha de CAGR</label>
+    <div class="corpo duas">
+      <label>De <select id="cagrDe"></select></label>
+      <label>Para <select id="cagrPara"></select></label>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div id="msg" class="msg" hidden></div>
+  <button id="btnInserir" class="primario">Inserir gráfico</button>
+  <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
+</footer>
+
+<script type="module" src="taskpane.js?v=1.8.2"></script>
+</body>
+</html>
