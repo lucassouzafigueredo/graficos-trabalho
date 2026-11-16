@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.8.2";
+import { fmtNum, fmtPct } from "./formats.js?v=1.8.3";
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -1572,7 +1572,7 @@ function textoVariacao(va, vb, modo) {
 // Fica POR CIMA das barras (contínua) e só se interrompe onde passaria sobre um texto
 // já desenhado (rótulos de valor, inclusive os de dentro das barras) ou sobre balões
 // e setas de outras variações.
-function linhaReferencia(tela, idx, y, xFim, cor) {
+function linhaReferencia(tela, idx, y, xFim, cor, dash = "dash", peso = 1) {
   const folga = 3;
   const x0 = tela.barras[idx].cx + tela.bw / 2;
   const bloqueios = [];
@@ -1593,19 +1593,20 @@ function linhaReferencia(tela, idx, y, xFim, cor) {
   for (const [a, z] of bloqueios) {
     if (z <= x) continue;
     if (a >= xFim) break;
-    if (a - x > 4) tela.line(x, y, Math.min(a, xFim), y, cor, 1, { dash: "dash" });
+    if (a - x > 4) tela.line(x, y, Math.min(a, xFim), y, cor, peso, { dash });
     x = Math.max(x, z);
   }
-  if (xFim - x > 4) tela.line(x, y, xFim, y, cor, 1, { dash: "dash" });
+  if (xFim - x > 4) tela.line(x, y, xFim, y, cor, peso, { dash });
 }
 
 function indicador(tela, A, B, aDireita, a, estiloIBCS, xs, ia, ib) {
   const e = tela.e;
   const ya = tela.Y(tela.clip(A.nivel)), yb = tela.Y(tela.clip(B.nivel));
   if (estiloIBCS) {
-    const xBorda = (aDireita ? A.cx : B.cx) + tela.bw / 2;
-    tela.line(xBorda, ya, xs + 3, ya, "#AFAFAF", 0.75);
-    tela.line(xBorda, yb, xs + 3, yb, "#AFAFAF", 0.75);
+    // as duas linhas de nível saem da PRÓPRIA barra (De e Para) e vão até o indicador,
+    // por cima das barras do meio, abrindo espaço só nos textos
+    linhaReferencia(tela, ia, ya, xs + 3, "#8C8C8C", "solid", 0.75);
+    linhaReferencia(tela, ib, yb, xs + 3, "#8C8C8C", "solid", 0.75);
     tela.line(xs, ya, xs, yb, B.valor >= A.valor ? e.pos : e.neg, 3.5);
     tela.dot(xs, ya, 2.5, "#000000");
     tela.dot(xs, yb, 2.5, "#000000");
