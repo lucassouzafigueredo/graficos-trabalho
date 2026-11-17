@@ -34,7 +34,7 @@ export const ESTILOS_PRONTOS = [
   { ...base, id: "bela-fechamento", nome: "PADRÃO BELA FP&A_fechamento", pronto: true, total: "#0B0C3D", delta: "#BFBFBF", porSinal: true,
     pilha: ["#0B0C3D", "#2E2F6B", "#5A5B9A", "#9C93DC", "#C9C3EE", "#E9E6F8"],
     colunas: ["#0B0C3D", "#9C93DC", "#C9C3EE", "#E9E6F8"],
-    cartao: { painel: "#F2F2F2", linha: "#9C93DC", cabecalho: "#0B0C3D", formato: "en" } },
+    cartao: { painel: "#F2F2F2", linha: "#9C93DC", cabecalho: "#0B0C3D" } },
 ];
 
 const CHAVE = "gfpa.estilos.v1";

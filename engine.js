@@ -6,7 +6,7 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct, definirIdioma, localeAtual } from "./formats.js?v=1.9.0";
+import { fmtNum, fmtPct, definirIdioma, localeAtual } from "./formats.js?v=1.9.1";
 
 // Idioma dos textos gerados nos gráficos (rótulos, legendas, título sugerido): "pt" | "en"
 let IDI = "pt";
@@ -1213,7 +1213,8 @@ const ehMargem = (cab, vals) => /%/.test(String(cab)) ||
   (vals.every((x) => x === null || Math.abs(x) <= 1.5) && vals.some((x) => x !== null && !Number.isInteger(x)));
 
 function formatadorCartao(e, spec, valores) {
-  const fmt = spec.formatoNum ?? (IDI === "en" ? "en" : e.cartao?.formato ?? PADRAO_CARTAO.formato);
+  // o formato segue o idioma do gráfico (PT-BR 1.234,5 · EN-US 1,234.5), salvo escolha explícita no painel
+  const fmt = spec.formatoNum ?? (IDI === "en" ? "en" : "br");
   const loc = fmt === "en" ? "en-US" : "pt-BR";
   const max = Math.max(0, ...valores.filter((x) => x !== null).map(Math.abs));
   const casas = max < 10 ? 1 : 0;
