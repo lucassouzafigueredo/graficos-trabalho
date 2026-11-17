@@ -6,7 +6,12 @@
 // pré-visualização, Excel para inserir na planilha) apenas desenham a lista.
 // =============================================================================
 
-import { fmtNum, fmtPct } from "./formats.js?v=1.8.3";
+import { fmtNum, fmtPct, definirIdioma, localeAtual } from "./formats.js?v=1.9.0";
+
+// Idioma dos textos gerados nos gráficos (rótulos, legendas, título sugerido): "pt" | "en"
+let IDI = "pt";
+function usarIdioma(id) { IDI = id === "en" ? "en" : "pt"; definirIdioma(IDI); }
+const L = (pt, en) => (IDI === "en" ? en : pt);
 
 export const TIPOS = {
   IBCS: { nome: "Cascata IBCS", W: 420, H: 250, comTipo: false },
@@ -112,9 +117,10 @@ class Tela {
     const size = this.e.fonte + 3;
     const linhas = String(text).split("\n");
     const maxLen = Math.max(...linhas.map((l) => l.length));
-    const w = maxLen * size * 0.6 + 22, h = size * (1.3 * linhas.length + 1);
+    // tamanho padrão (cabe "+12,3%" / "-1.234"): os balões saem iguais mesmo com textos diferentes
+    const w = Math.max(maxLen, 7) * size * 0.6 + 22, h = size * (1.3 * linhas.length + 1);
     const left = ladoEsquerdo ? x : x - w / 2;
-    this.p.push({ t: "ellipse", x: left, y: cy - h / 2, w, h, text, size });
+    this.p.push({ t: "ellipse", x: left, y: cy - h / 2, w, h, text, size, ancora: ladoEsquerdo ? "esq" : "centro" });
   }
   // anel entre os raios r0 e r1, do ângulo a0 ao a1 (radianos, 0 = 12h, sentido horário)
   arco(cx, cy, r0, r1, a0, a1, fill) {
@@ -210,6 +216,7 @@ const reservaTopo = (anot) => (anot.cagr.on ? 48 : 0);
 // API principal
 // -----------------------------------------------------------------------------
 export function montarGrafico(dados, specOrig, estilo) {
+  usarIdioma(specOrig.idioma);
   const tela = new Tela(estilo);
   // título, subtítulo, fonte e nota são desenhados aqui, em volta do gráfico (padrão único)
   const cartao = specOrig.tipo === "CARD" || specOrig.tipo === "CARDM"; // o cartão desenha o próprio título
@@ -266,6 +273,7 @@ export function montarGrafico(dados, specOrig, estilo) {
     default:
       throw new Error("Tipo de gráfico desconhecido: " + spec.tipo);
   }
+  igualarBaloes(tela.p);
   const r = emoldurar(tela, largura, altura, moldura);
   return { largura, altura: r.altura, prims: tela.p, escala: tela.escalaNatural ?? null };
 }
@@ -286,6 +294,18 @@ function baseCorte(corte, niveis, maxHi) {
   const amp = maxHi - nMin;
   const base = Math.max(0, nMin - Math.max(amp * 1.2, maxHi * 0.04));
   return base > maxHi * 0.15 ? base : 0;
+}
+
+// Todos os balões (call-outs) de um gráfico com o mesmo tamanho: o do maior
+function igualarBaloes(prims) {
+  const bs = prims.filter((q) => q.t === "ellipse");
+  if (bs.length < 2) return;
+  const W = Math.max(...bs.map((q) => q.w)), H = Math.max(...bs.map((q) => q.h));
+  bs.forEach((q) => {
+    const cx = q.x + q.w / 2, cy = q.y + q.h / 2;
+    if (q.ancora !== "esq") q.x = cx - W / 2;
+    q.y = cy - H / 2; q.w = W; q.h = H;
+  });
 }
 
 // Escala: guarda a natural (para o grupo "mesma escala") e aplica a fixa, se houver.
@@ -336,7 +356,7 @@ function emoldurar(tela, W, H, m) {
     rod.push({ t: "line", x1: 0, y1: fim, x2: W, y2: fim, color: "#BFBFBF", w: 0.75, dash: "solid" });
     fim += 4;
     const sz = Math.max(7, e.fonte - 1);
-    for (const [rotulo, txt] of [["Fonte: ", fo], ["Nota: ", no]]) {
+    for (const [rotulo, txt] of [[L("Fonte: ", "Source: "), fo], [L("Nota: ", "Note: "), no]]) {
       if (!txt) continue;
       const nl = linhasTexto(rotulo + txt, W, sz, 3);
       rod.push({ t: "text", x: 0, y: fim, w: W, h: sz * 1.35 * nl, text: rotulo + txt, size: sz, color: "#7F7F7F", bold: false, italic: false, align: "left", valign: "top", wrap: nl > 1, maxLinhas: nl });
@@ -658,7 +678,7 @@ export function fmtTab(v, spec, comSinal = false) {
   const u = spec?.unidade ?? "un";
   const div = { un: 1, mil: 1e3, mi: 1e6, bi: 1e9 }[u] ?? 1;
   const casas = spec?.casas ?? (u === "un" ? 0 : 1);
-  const s = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas }).format(Math.abs(v) / div) + (spec?.sufixo ?? "");
+  const s = new Intl.NumberFormat(localeAtual(), { minimumFractionDigits: casas, maximumFractionDigits: casas }).format(Math.abs(v) / div) + (spec?.sufixo ?? "");
   if (v < 0 && /[1-9]/.test(s)) return "-" + s;
   if (comSinal && v > 0) return "+" + s;
   return s;
@@ -708,7 +728,7 @@ function tabela(tela, d, W, spec) {
   const refNomes = iRefs.map((i) => d.cab[i] || "Ref"), acNome = d.cab[iAc] || "AC";
   const vis = { ref: true, ac: true, abs: true, pct: true, ...(spec.colunas ?? {}) };
   if (!vis.ac && !vis.abs && !vis.pct) throw new Error("Deixe visível ao menos uma coluna: Atual, Δ ou Δ%.");
-  const iCom = (d.cabTextos ?? []).findIndex((c) => /coment|obs|nota|explic|justif/i.test(c));
+  const iCom = (d.cabTextos ?? []).findIndex((c) => /coment|obs|nota|note|explic|justif/i.test(c));
   const colCom = iCom >= 0 ? iCom : (d.cabTextos?.length ? 0 : -1);
   let todas = d.rot.map((r, i) => {
     const refs = iRefs.map((k) => num(d.v[i][k])), ac = num(d.v[i][iAc]);
@@ -728,7 +748,7 @@ function tabela(tela, d, W, spec) {
         if (!fora.includes(l)) novas.push(l);
         if (i === ultimo && spec.agruparOutros !== false && fora.length) {
           const refs = iRefs.map((_, k) => fora.reduce((a, x) => a + x.refs[k], 0));
-          novas.push({ r: `Outros (${fora.length})`, refs, ref: refs[0], ac: fora.reduce((a, x) => a + x.ac, 0), outros: true,
+          novas.push({ r: `${L("Outros", "Others")} (${fora.length})`, refs, ref: refs[0], ac: fora.reduce((a, x) => a + x.ac, 0), outros: true,
             f: { inv: fora.every((x) => x.f.inv), res: false, neg: false, ocultar: false }, com: "" });
         }
       });
@@ -942,7 +962,7 @@ function roscas(tela, d, W, H, spec) {
   const paleta = e.pilha?.length ? e.pilha : [e.total];
   const cor = (i) => (iD >= 0 ? (i === iD ? e.total : cinzas[(i < iD ? i : i - 1) % 2]) : paleta[i % paleta.length]);
   // legenda única
-  const itens = iD >= 0 ? [[d.rot[iD], e.total], ["Demais", cinzas[0]]] : d.rot.map((r, i) => [r, cor(i)]);
+  const itens = iD >= 0 ? [[d.rot[iD], e.total], [L("Demais", "Others"), cinzas[0]]] : d.rot.map((r, i) => [r, cor(i)]);
   const legW = Math.min(150, Math.max(70, Math.max(...itens.map(([r]) => r.length)) * e.fonte * 0.56 + 22));
   const yLeg0 = titH + 14;
   itens.forEach(([r, c], k) => {
@@ -1001,7 +1021,7 @@ function roscas(tela, d, W, H, spec) {
       const part = Math.max(0, num(d.v[iD][j])) / T;
       if (partAnt !== null) {
         const pp = (part - partAnt) * 100;
-        const txt = (pp > 0.05 ? "+" : pp < -0.05 ? "-" : "") + new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(pp)) + " p.p.";
+        const txt = (pp > 0.05 ? "+" : pp < -0.05 ? "-" : "") + new Intl.NumberFormat(localeAtual(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(pp)) + L(" p.p.", " pp");
         tela.text(txt, cx, yRot, "top", colW - 6, { size: e.fonte, italic: true, color: pp > 0.05 ? e.pos : pp < -0.05 ? e.neg : e.texto });
       }
       partAnt = part;
@@ -1069,14 +1089,14 @@ function bolhas(tela, d, W, spec) {
   // legenda das faixas
   const yLeg = titH + 4;
   let xl = 0;
-  tela.text(separada ? "Cor:" : "Faixas:", xl, yLeg + 6, "middle", 40, { size: tam, align: "left", color: "#595959" });
+  tela.text(separada ? L("Cor:", "Color:") : L("Faixas:", "Bands:"), xl, yLeg + 6, "middle", 40, { size: tam, align: "left", color: "#595959" });
   xl += separada ? 26 : 38;
   faixas.forEach((f) => {
     tela.dot(xl + 5, yLeg + 6, 5, f.cor);
     tela.text(f.rot, xl + 13, yLeg + 6, "middle", 90, { size: tam, align: "left" });
     xl += 13 + f.rot.length * tam * 0.56 + 14;
   });
-  tela.text("Tamanho = |valor|", W, yLeg + 6, "middle", 120, { size: tam, align: "right", color: "#595959", italic: true });
+  tela.text(L("Tamanho = |valor|", "Size = |value|"), W, yLeg + 6, "middle", 120, { size: tam, align: "right", color: "#595959", italic: true });
   const yCab = yLeg + 22, y0 = yCab + 18;
   cols.forEach((j, k) => tela.text(d.cab[j], lw + cw * (k + 0.5), yCab, "top", cw - 4, { size: tam, bold: true, color: "#595959" }));
   tela.line(0, y0 - 2, W, y0 - 2, "#BFBFBF", 0.75);
@@ -1134,7 +1154,7 @@ export function pvmCalcular(d, spec = {}) {
     const orig = String(d.cab[i]).split(/\s+/).filter((w) => t.split(" ").includes(normalizar(w).replace(/[^A-Z0-9+]/g, "")));
     return orig.join(" ") || padrao;
   };
-  const refNome = nomeCen(p0c.iv, "Ref") , acNome = nomeCen(p1c.iv, "Real");
+  const refNome = nomeCen(p0c.iv, "Ref"), acNome = nomeCen(p1c.iv, L("Real", "Actual"));
   const precoDe = (i, c) => {
     const v = num(d.v[i][c.iv]), x = num(d.v[i][c.ix]);
     return c.k === "r" ? (v ? x / v : null) : x;
@@ -1168,13 +1188,14 @@ export function pvmCalcular(d, spec = {}) {
 function dadosPVM(c, spec) {
   const rot = [c.refNome, "Volume"], v = [[c.R0], [c.volume]];
   if (c.comMix) { rot.push("Mix"); v.push([c.mix]); }
+  const preco = L("Preço", "Price");
   const n = Math.max(0, +spec.pvmDetalhe || 0);
   if (n > 0) {
     const ord = [...c.prods].sort((a, b) => Math.abs(b.preco) - Math.abs(a.preco));
     const top = ord.slice(0, n), resto = ord.slice(n);
-    top.forEach((x) => { rot.push(`Preço ${x.r}`); v.push([x.preco]); });
-    if (resto.length) { rot.push(`Preço – demais (${resto.length})`); v.push([c.preco - top.reduce((a, x) => a + x.preco, 0)]); }
-  } else { rot.push("Preço"); v.push([c.preco]); }
+    top.forEach((x) => { rot.push(`${preco} ${x.r}`); v.push([x.preco]); });
+    if (resto.length) { rot.push(`${preco} – ${L("demais", "other")} (${resto.length})`); v.push([c.preco - top.reduce((a, x) => a + x.preco, 0)]); }
+  } else { rot.push(preco); v.push([c.preco]); }
   rot.push(c.acNome); v.push([c.R1]);
   return { rot, cab: ["Receita"], v, tipo: [], nLin: rot.length, nCol: 1, cabTextos: [], textos: rot.map(() => []) };
 }
@@ -1192,7 +1213,7 @@ const ehMargem = (cab, vals) => /%/.test(String(cab)) ||
   (vals.every((x) => x === null || Math.abs(x) <= 1.5) && vals.some((x) => x !== null && !Number.isInteger(x)));
 
 function formatadorCartao(e, spec, valores) {
-  const fmt = spec.formatoNum ?? e.cartao?.formato ?? PADRAO_CARTAO.formato;
+  const fmt = spec.formatoNum ?? (IDI === "en" ? "en" : e.cartao?.formato ?? PADRAO_CARTAO.formato);
   const loc = fmt === "en" ? "en-US" : "pt-BR";
   const max = Math.max(0, ...valores.filter((x) => x !== null).map(Math.abs));
   const casas = max < 10 ? 1 : 0;
@@ -1347,15 +1368,16 @@ function desenharCartao(tela, x, y, w, h, s, o) {
       const va = tot[i], vb = tot[j], d = vb - va, p = va ? d / Math.abs(va) : null;
       const txt = a.modo === "A" || p === null ? F.dif(d) : a.modo === "P" ? `(${F.pct(p)})` : `${F.dif(d)}\n(${F.pct(p)})`;
       const ls = txt.split("\n"), bs = mini ? fs : fs;
-      const r = Math.max(ls.length * bs * 0.75 + 5, Math.max(...ls.map((l) => l.length)) * bs * 0.33 + 6);
-      tela.p.push({ t: "ellipse", x: (xa + xb) / 2 - r, y: yCol - r, w: 2 * r, h: 2 * r, text: txt, size: bs });
+      // raio padrão pelo nº de linhas (todos os cartões da página saem iguais); só cresce se o texto não couber
+      const r = Math.max(ls.length > 1 ? bs * 2.75 : bs * 2.15, Math.max(...ls.map((l) => l.length)) * bs * 0.33 + 4);
+      tela.p.push({ t: "ellipse", x: (xa + xb) / 2 - r, y: yCol - r, w: 2 * r, h: 2 * r, text: txt, size: bs, ancora: "centro" });
     });
   }
   // legenda
   if (legH) {
     const yL = yRot + fsRot * 1.5 + fs * 0.6, itens = [];
     if (s.v2) itens.push(["q", s.nome1, cores.navy], ["o", s.nome2, cores.navy]);
-    if (s.margem && !s.v2) itens.push(["m", "Margem", cores.linha]);
+    if (s.margem && !s.v2) itens.push(["m", L("Margem", "Margin"), cores.linha]);
     const larg = itens.reduce((a, [, t]) => a + t.length * fs * 0.55 + 30, 0);
     let xl = x + w / 2 - larg / 2;
     itens.forEach(([k, t, c]) => {
@@ -1427,7 +1449,7 @@ const pct1 = (p) => fmtPct(p, Math.abs(p) >= 1 ? 0 : 1).replace(/^-/, "−");
 const pctSemSinal = (p) => pct1(p).replace(/^[+\-−]/, "");
 const comSinal = (v) => fmtNum(v, true).replace(/^-/, "−");
 const verbo = (xs, um, varios) => (xs.length > 1 ? varios : um);
-const lista = (xs) => (xs.length <= 1 ? xs.join("") : xs.slice(0, -1).join(", ") + " e " + xs[xs.length - 1]);
+const lista = (xs) => (xs.length <= 1 ? xs.join("") : xs.slice(0, -1).join(", ") + L(" e ", " and ") + xs[xs.length - 1]);
 
 // frase "X% acima/abaixo de REF: drivers" a partir de impactos (positivo = favorável)
 function fraseDesvio(nome, ref, ac, refNome, drivers, inverso = false) {
@@ -1437,21 +1459,25 @@ function fraseDesvio(nome, ref, ac, refNome, drivers, inverso = false) {
   const pos = drivers.filter((x) => x.imp > 0).sort((a, b) => b.imp - a.imp);
   const neg = drivers.filter((x) => x.imp < 0).sort((a, b) => a.imp - b.imp);
   const fmtD = (x) => `${x.r} (${comSinal(x.imp)})`;
-  if (p !== null && Math.abs(p) < 0.0005) return `${nome} em linha com ${refNome}` + (pos[0] && neg[0] ? `: ${fmtD(pos[0])} compensou ${fmtD(neg[0])}` : "");
+  if (p !== null && Math.abs(p) < 0.0005) return L(`${nome} em linha com ${refNome}`, `${nome} in line with ${refNome}`) +
+    (pos[0] && neg[0] ? `: ${fmtD(pos[0])} ${L("compensou", "offset")} ${fmtD(neg[0])}` : "");
   const quanto = p === null ? comSinal(dv) : pctSemSinal(p);
-  const lado = dv >= 0 ? "acima" : "abaixo";
-  let t = `${nome} ${quanto} ${lado} ${/^(o|a)\s/i.test(refNome) ? "d" + refNome : "do " + refNome}`;
+  let t = IDI === "en" ? `${nome} ${quanto} ${dv >= 0 ? "above" : "below"} ${refNome}`
+    : `${nome} ${quanto} ${dv >= 0 ? "acima" : "abaixo"} ${/^(o|a)\s/i.test(refNome) ? "d" + refNome : "do " + refNome}`;
   const P = pos.slice(0, 2), N = neg.slice(0, 2);
   if (fav) {
-    if (P.length) t += `: ${lista(P.map(fmtD))} ` + (neg.length ? `${verbo(P, "compensou", "compensaram")} ${fmtD(neg[0])}` : verbo(P, "explica o resultado", "explicam o resultado"));
+    if (P.length) t += `: ${lista(P.map(fmtD))} ` + (neg.length ? `${verbo(P, L("compensou", "offset"), L("compensaram", "offset"))} ${fmtD(neg[0])}`
+      : verbo(P, L("explica o resultado", "drives the result"), L("explicam o resultado", "drive the result")));
   } else if (N.length) {
-    t += `: ${lista(N.map(fmtD))} ` + (pos.length ? `${verbo(N, "anulou", "anularam")} ${fmtD(pos[0])}` : verbo(N, "explica o desvio", "explicam o desvio"));
+    t += `: ${lista(N.map(fmtD))} ` + (pos.length ? `${verbo(N, L("anulou", "outweighed"), L("anularam", "outweighed"))} ${fmtD(pos[0])}`
+      : verbo(N, L("explica o desvio", "drives the gap"), L("explicam o desvio", "drive the gap")));
   }
   return t;
 }
 
 export function sugerirTitulo(d, spec) {
   if (!d || !d.nLin) return "";
+  usarIdioma(spec.idioma);
   const nome0 = (d.cab[0] && !/^S[ée]rie \d+$/.test(d.cab[0]) ? d.cab[0] : "Total");
   switch (spec.tipo) {
     case "TAB": {
@@ -1464,13 +1490,13 @@ export function sugerirTitulo(d, spec) {
       const principal = res.length ? res[res.length - 1]
         : { r: "Total", ref: ls.reduce((a, l) => a + (l.f.inv ? -l.ref : l.ref), 0), ac: ls.reduce((a, l) => a + (l.f.inv ? -l.ac : l.ac), 0), f: {} };
       const drivers = ls.filter((l) => !l.f.res).map((l) => ({ r: l.r, imp: l.f.inv ? -(l.ac - l.ref) : l.ac - l.ref }));
-      return fraseDesvio(principal.r, principal.ref, principal.ac, d.cab[iRefs[0]] || "referência", drivers);
+      return fraseDesvio(principal.r, principal.ref, principal.ac, d.cab[iRefs[0]] || L("referência", "reference"), drivers);
     }
     case "PVM": {
       const c = pvmCalcular(d, spec);
-      const drivers = [{ r: "volume", imp: c.volume }, { r: "preço", imp: c.preco }];
+      const drivers = [{ r: "volume", imp: c.volume }, { r: L("preço", "price"), imp: c.preco }];
       if (c.comMix) drivers.push({ r: "mix", imp: c.mix });
-      return fraseDesvio("Receita", c.R0, c.R1, c.refNome, drivers.filter((x) => Math.abs(x.imp) > 1e-9));
+      return fraseDesvio(L("Receita", "Revenue"), c.R0, c.R1, c.refNome, drivers.filter((x) => Math.abs(x.imp) > 1e-9));
     }
     case "IBCS": {
       const { ini, fim } = calcCascata(d, 0);
@@ -1482,7 +1508,8 @@ export function sugerirTitulo(d, spec) {
         .sort((a, b) => b.p - a.p);
       const melhor = vs[0], pior = vs[vs.length - 1];
       return vs.length < 2 ? `${melhor.c} ${pct1(melhor.p)} vs ${d.rot[0]}`
-        : `${melhor.c} lidera (${pct1(melhor.p)} vs ${d.rot[0]}); ${pior.c} fica para trás (${pct1(pior.p)})`;
+        : L(`${melhor.c} lidera (${pct1(melhor.p)} vs ${d.rot[0]}); ${pior.c} fica para trás (${pct1(pior.p)})`,
+          `${melhor.c} leads (${pct1(melhor.p)} vs ${d.rot[0]}); ${pior.c} lags (${pct1(pior.p)})`);
     }
     case "EMP": {
       const tot = d.rot.map((_, i) => d.v[i].reduce((a, x) => a + num(x), 0));
@@ -1492,30 +1519,39 @@ export function sugerirTitulo(d, spec) {
         .sort((x, y) => Math.abs(y.imp) - Math.abs(x.imp));
       const p = tot[a] > 0 && tot[b] >= 0 ? (tot[b] - tot[a]) / tot[a] : null; // % só faz sentido com base positiva
       const D = drivers.slice(0, 2);
-      return `De ${d.rot[a]} (${fmtNum(tot[a]).replace(/^-/, "−")}) a ${d.rot[b]} (${fmtNum(tot[b]).replace(/^-/, "−")})` + (p !== null ? `, ${pct1(p)}` : "") +
-        (D.length ? `: ${lista(D.map((x) => `${x.r} (${comSinal(x.imp)})`))} ${verbo(D, "explica", "explicam")} a maior parte` : "");
+      return `${L("De", "From")} ${d.rot[a]} (${fmtNum(tot[a]).replace(/^-/, "−")}) ${L("a", "to")} ${d.rot[b]} (${fmtNum(tot[b]).replace(/^-/, "−")})` + (p !== null ? `, ${pct1(p)}` : "") +
+        (D.length ? `: ${lista(D.map((x) => `${x.r} (${comSinal(x.imp)})`))} ${verbo(D, L("explica a maior parte", "explains most of it"), L("explicam a maior parte", "explain most of it"))}` : "");
     }
     case "COL": {
       const tot = d.rot.map((_, i) => d.v[i].reduce((a, x) => a + num(x), 0));
       const n = tot.length, a = tot[0], b = tot[n - 1];
       const nome = d.nCol > 1 ? "Total" : nome0;
-      if (n < 2 || a <= 0 || b <= 0) return `${nome}: ${fmtNum(b)} em ${d.rot[n - 1]}`;
+      if (n < 2 || a <= 0 || b <= 0) return `${nome}: ${fmtNum(b)} ${L("em", "in")} ${d.rot[n - 1]}`;
       // CAGR só quando os rótulos são anos; senão (LY, BGT, 6+6…) variação simples
       if (!d.rot.every((r) => /^(19|20)\d{2}\b/.test(String(r).trim())))
-        return `${nome} ${pct1((b - a) / a)} de ${d.rot[0]} para ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+        return `${nome} ${pct1((b - a) / a)} ${L("de", "from")} ${d.rot[0]} ${L("para", "to")} ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
       const g = Math.pow(b / a, 1 / (n - 1)) - 1;
-      const verbo = g >= 0 ? "cresce" : "cai";
-      let t = `${nome} ${verbo} ${pctSemSinal(g)} a.a. entre ${d.rot[0]} e ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+      let t = IDI === "en" ? `${nome} ${g >= 0 ? "grows" : "falls"} ${pctSemSinal(g)} CAGR from ${d.rot[0]} to ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`
+        : `${nome} ${g >= 0 ? "cresce" : "cai"} ${pctSemSinal(g)} a.a. entre ${d.rot[0]} e ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
       if (d.nCol > 1) {
         const cres = d.cab.map((c, j) => ({ c, dv: num(d.v[n - 1][j]) - num(d.v[0][j]) })).sort((x, y) => y.dv - x.dv);
-        t += `, com ${cres[0].c} respondendo por ${pctSemSinal(cres[0].dv / (b - a || 1))} do aumento`;
+        t += L(`, com ${cres[0].c} respondendo por ${pctSemSinal(cres[0].dv / (b - a || 1))} do aumento`,
+          `, with ${cres[0].c} accounting for ${pctSemSinal(cres[0].dv / (b - a || 1))} of the increase`);
       }
       return t;
     }
     case "COMP": {
       const n = d.nLin, a = num(d.v[0][0]), b = num(d.v[n - 1][0]);
       const p = a ? (b - a) / Math.abs(a) : null;
-      return `${nome0} ${p === null ? comSinal(b - a) : pct1(p)} de ${d.rot[0]} para ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+      return `${nome0} ${p === null ? comSinal(b - a) : pct1(p)} ${L("de", "from")} ${d.rot[0]} ${L("para", "to")} ${d.rot[n - 1]} (${fmtNum(a)} → ${fmtNum(b)})`;
+    }
+    case "CARD": {
+      // 1ª série; compara a última coluna (Actual) com a penúltima (ex.: 6+6)
+      const iM = d.cab.findIndex((c, j) => ehMargem(c, d.v.map((l) => l[j])));
+      const j = d.cab.findIndex((_, k) => k !== iM);
+      const n = d.nLin, a = num(d.v[n - 2]?.[j]), b = num(d.v[n - 1][j]);
+      const p = a ? (b - a) / Math.abs(a) : null;
+      return `${d.cab[j]} ${p === null ? comSinal(b - a) : pct1(p)} vs ${d.rot[n - 2] ?? ""} (${fmtNum(a)} → ${fmtNum(b)})`;
     }
     case "ROS": {
       const tot = d.cab.map((_, j) => d.rot.reduce((a, _, i) => a + Math.max(0, num(d.v[i][j])), 0));
@@ -1524,9 +1560,10 @@ export function sugerirTitulo(d, spec) {
       let i = d.rot.indexOf(spec.destaque);
       if (i < 0) i = d.rot.map((_, k) => k).sort((x, y) => Math.abs(part(y, n - 1) - part(y, 0)) - Math.abs(part(x, n - 1) - part(x, 0)))[0];
       const p0 = part(i, 0), p1 = part(i, n - 1);
-      const verbo = p1 > p0 + 0.0005 ? "ganha participação" : p1 < p0 - 0.0005 ? "perde participação" : "mantém a participação";
-      return n < 2 ? `${d.rot[i]} responde por ${pctSemSinal(p1)} do total`
-        : `${d.rot[i]} ${verbo}: de ${pctSemSinal(p0)} para ${pctSemSinal(p1)} do total (${d.cab[0]} → ${d.cab[n - 1]})`;
+      const verbo = p1 > p0 + 0.0005 ? L("ganha participação", "gains share") : p1 < p0 - 0.0005 ? L("perde participação", "loses share") : L("mantém a participação", "holds its share");
+      return n < 2 ? L(`${d.rot[i]} responde por ${pctSemSinal(p1)} do total`, `${d.rot[i]} accounts for ${pctSemSinal(p1)} of the total`)
+        : L(`${d.rot[i]} ${verbo}: de ${pctSemSinal(p0)} para ${pctSemSinal(p1)} do total (${d.cab[0]} → ${d.cab[n - 1]})`,
+          `${d.rot[i]} ${verbo}: from ${pctSemSinal(p0)} to ${pctSemSinal(p1)} of the total (${d.cab[0]} → ${d.cab[n - 1]})`);
     }
     case "BOL": {
       const { cols } = blocosBolhas(d);
@@ -1534,11 +1571,12 @@ export function sugerirTitulo(d, spec) {
       const temNeg = d.rot.some((_, i) => cols.some((j) => num(d.v[i][j]) < 0));
       if (temNeg) {
         const ord = [...somas].sort((a, b) => a.s - b.s), pior = ord[0], melhor = ord[ord.length - 1];
-        return `${pior.r} concentra o maior desvio negativo (${comSinal(pior.s)} no período); ${melhor.r} o maior positivo (${comSinal(melhor.s)})`;
+        return L(`${pior.r} concentra o maior desvio negativo (${comSinal(pior.s)} no período); ${melhor.r} o maior positivo (${comSinal(melhor.s)})`,
+          `${pior.r} has the largest negative gap (${comSinal(pior.s)} in the period); ${melhor.r} the largest positive (${comSinal(melhor.s)})`);
       }
       const total = somas.reduce((a, x) => a + x.s, 0) || 1;
       const top = [...somas].sort((a, b) => b.s - a.s)[0];
-      return `${top.r} responde por ${pctSemSinal(top.s / total)} do total`;
+      return L(`${top.r} responde por ${pctSemSinal(top.s / total)} do total`, `${top.r} accounts for ${pctSemSinal(top.s / total)} of the total`);
     }
     default:
       return "";
@@ -1643,5 +1681,5 @@ function linhaCAGR(tela, a, b) {
   }
   y1 -= sh; y2 -= sh;
   tela.arrow(x1, y1, x2, y2, "#000000", 1.5);
-  tela.ellipse(fmtPct(g, 0) + tela.e.sufCagr, (x1 + x2) / 2, (y1 + y2) / 2, false);
+  tela.ellipse(fmtPct(g, 0) + L(tela.e.sufCagr, " CAGR"), (x1 + x2) / 2, (y1 + y2) / 2, false);
 }

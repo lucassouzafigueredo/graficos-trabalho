@@ -11,8 +11,8 @@
 // Se a memória estiver errada (ex.: Excel atualizado), ela é apagada e o desenho
 // é refeito com tentativas.
 // =============================================================================
-import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.8.3";
-import { renderSVG } from "./render-svg.js?v=1.8.3";
+import { svgListrado, segmentosListras, ESPESSURA_LISTRA } from "./listras.js?v=1.9.0";
+import { renderSVG } from "./render-svg.js?v=1.9.0";
 
 const DASH = { dash: ["Dash", "SystemDash", "LongDash"], dot: ["RoundDot", "SquareDot", "SystemDot", "Dash"] };
 const SETAS = ["Triangle", "Stealth", "Open"];
@@ -117,7 +117,9 @@ export { desenharNoExcel as inserirNoExcel }; // compatibilidade
 const temFuncao = (obj, nome) => { try { return typeof obj[nome] === "function"; } catch { return false; } };
 
 // Desenha o SVG num canvas do painel e devolve um PNG em base64 (alta resolução)
-export async function svgParaPngBase64(svg, largura, altura, escala = 3) {
+export async function svgParaPngBase64(svg, largura, altura, escala = 4) {
+  // limite do canvas (navegadores aceitam ~16k px por lado); acima disso reduz a escala
+  escala = Math.min(escala, 12000 / Math.max(largura, altura));
   const img = new Image();
   await new Promise((ok, falha) => {
     img.onload = ok;
@@ -139,7 +141,7 @@ async function inserirComoImagem(context, sheet, grafico, L, T, meta) {
   if (temFuncao(sheet.shapes, "addSvg") && conhecido("imagem") !== "png") {
     s = sheet.shapes.addSvg(svg);
   } else if (temFuncao(sheet.shapes, "addImage")) {
-    s = sheet.shapes.addImage(await svgParaPngBase64(svg, W, H));
+    s = sheet.shapes.addImage(await svgParaPngBase64(svg, W, H, +meta?.spec?.resolucao || 4));
     if (conhecido("imagem") !== "png") { cap.ok.imagem = "png"; gravarCap(); }
   } else {
     throw new Error("Esta versão do Excel não permite inserir imagens pelo add-in.");

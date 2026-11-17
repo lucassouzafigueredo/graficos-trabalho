@@ -1,26 +1,33 @@
 // =============================================================================
 // Gráficos FP&A — painel lateral (Office Add-in)
 // =============================================================================
-import { modoCorte, TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.8.3";
-import { renderSVG } from "./render-svg.js?v=1.8.3";
-import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.8.3";
+import { modoCorte, TIPOS, lerDados, montarGrafico, anotacoesPadrao, CENARIOS_PADRAO, aparencias, flagsLinha, colunasTabela, sugerirTitulo, unirEscalas } from "./engine.js?v=1.9.0";
+import { renderSVG } from "./render-svg.js?v=1.9.0";
+import { desenharNoExcel, listarGraficosTodas, descreverErro } from "./render-excel.js?v=1.9.0";
 import {
   ESTILOS_PRONTOS, todosEstilos, estiloPorId, estiloAtualId, definirEstiloAtual, salvarEstiloUsuario,
   excluirEstiloUsuario, exportarEstilos, importarEstilos,
-} from "./styles.js?v=1.8.3";
-import { parseA1, montarA1, intersecta } from "./a1.js?v=1.8.3";
-import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.8.3";
-import { MODELOS, ESTILO_MODELOS } from "./modelos.js?v=1.8.3";
+} from "./styles.js?v=1.9.0";
+import { parseA1, montarA1, intersecta } from "./a1.js?v=1.9.0";
+import { DEMOS, EXEMPLOS, textos as textosDemo } from "./demo.js?v=1.9.0";
+import { MODELOS, modelosNoIdioma, ESTILO_MODELOS } from "./modelos.js?v=1.9.0";
 
-const VERSAO = "1.8.3";
+const VERSAO = "1.9.0";
 const $ = (id) => document.getElementById(id);
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+// preferências do usuário (ficam neste computador)
+const CHAVE_IDIOMA = "gfpa.idioma", CHAVE_RES = "gfpa.resolucao", CHAVE_AUTO = "gfpa.autoAtualizar";
+const lerPref = (k, p) => { try { return localStorage.getItem(k) || p; } catch { return p; } };
+const gravarPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+function idiomaPadrao() { return lerPref(CHAVE_IDIOMA, "pt"); }
+function resolucaoPadrao() { return +lerPref(CHAVE_RES, "4"); }
 
 const st = {
   noExcel: false,
   fonte: null,          // { sheet, address, tabela, autoLinhas }
   valores: null, textos: null, dados: null,
-  spec: { tipo: "IBCS", titulo: "", corte: 0, W: TIPOS.IBCS.W, H: TIPOS.IBCS.H, anot: anotacoesPadrao("IBCS"), modo: null },
+  spec: { tipo: "IBCS", titulo: "", corte: 0, W: TIPOS.IBCS.W, H: TIPOS.IBCS.H, anot: anotacoesPadrao("IBCS"), modo: null, idioma: idiomaPadrao() },
   editando: null,       // item da lista de gráficos sendo editado
   estiloGrafico: null,  // estilo gravado no gráfico (quando não existe mais na lista)
   graficos: [], abas: {},
@@ -300,6 +307,8 @@ function escreverForm() {
   $("cartPorLinha").value = s.porLinha ?? "";
   $("cartComent").value = s.comentarioCartao ?? "";
   $("largura").value = s.W; $("altura").value = s.H;
+  $("idioma").value = s.idioma ?? "pt";
+  $("resolucao").value = String(s.resolucao ?? resolucaoPadrao());
   const modo = s.modo ?? (st.editando ? "formas" : modoPadrao());
   document.querySelectorAll("input[name=modoDesenho]").forEach((r) => (r.checked = r.value === modo));
   if (st.fonte) { $("endereco").value = `${st.fonte.sheet}!${st.fonte.address}`; $("autoLinhas").checked = st.fonte.autoLinhas !== false; }
@@ -332,6 +341,9 @@ function lerForm() {
   s.W = Math.max(150, +$("largura").value || TIPOS[s.tipo].W);
   s.H = Math.max(100, +$("altura").value || TIPOS[s.tipo].H);
   s.modo = document.querySelector("input[name=modoDesenho]:checked")?.value ?? "imagem";
+  s.idioma = $("idioma").value;
+  s.resolucao = +$("resolucao").value || 4;
+  $("lblResolucao").hidden = s.modo !== "imagem";
   document.querySelectorAll(".anot[data-k]").forEach((el) => {
     const a = s.anot.v[+el.dataset.k];
     a.on = el.querySelector(".on").checked;
@@ -703,7 +715,7 @@ async function gerarExemplos() {
         modo: modoPadrao(),
         cascata: !!ex.cascata, comentarios: ex.comentarios ?? true, topN: ex.topN ?? demo.topN ?? 0,
         ordem: ex.ordem ?? "planilha", colunas: ex.colunas, destaque: ex.destaque ?? demo.destaque,
-        pvmDetalhe: ex.pvmDetalhe ?? 0,
+        pvmDetalhe: ex.pvmDetalhe ?? 0, idioma: $("idioma").value, resolucao: +$("resolucao").value || 4,
         subtitulo: ex.subtitulo, fonteDados: ex.fonteDados, nota: ex.nota, grupoEscala: ex.grupo,
         escalaFixa: ex.grupo ? escalasExemplos[ex.grupo] : null,
       };
@@ -726,13 +738,14 @@ async function gerarModelo(m) {
     // fora do Excel: mostra o 1º cartão do modelo na pré-visualização
     const c = m.cartoes[0];
     st.valores = c.valores; st.textos = textosDemo(c.valores); st.fonte = null;
-    st.spec = { tipo: c.tipo, titulo: c.titulo, W: c.W ?? TIPOS[c.tipo].W, H: TIPOS[c.tipo].H, anot: anotacoesPadrao(c.tipo), porLinha: c.porLinha };
+    st.spec = { tipo: c.tipo, titulo: c.titulo, W: c.W ?? TIPOS[c.tipo].W, H: TIPOS[c.tipo].H, anot: anotacoesPadrao(c.tipo), porLinha: c.porLinha, idioma: $("idioma").value };
     $("estilo").value = ESTILO_MODELOS;
     processarValores(); escreverForm(); preview();
     msg(`Pré-visualização do modelo “${m.nome}”. No Excel, o botão cria a aba completa.`);
     return;
   }
   let nomeAba = "", total = 0;
+  const idioma = $("idioma").value, en = idioma === "en";
   await Excel.run(async (ctx) => {
     const wss = ctx.workbook.worksheets;
     wss.load("items/name");
@@ -743,7 +756,7 @@ async function gerarModelo(m) {
     const ws = wss.add(nomeAba);
     ws.activate();
     try { ws.showGridlines = false; } catch { /* versão antiga */ }
-    const t = ws.getRange("A1"); t.values = [[m.nome]]; t.format.font.bold = true; t.format.font.size = 16; t.format.font.color = "#0B0C3D";
+    const t = ws.getRange("A1"); t.values = [[m.nome + (en ? " (EN-US)" : "")]]; t.format.font.bold = true; t.format.font.size = 16; t.format.font.color = "#0B0C3D";
     const st2 = ws.getRange("A2"); st2.values = [[m.subtitulo]]; st2.format.font.size = 12; st2.format.font.underline = "Single"; st2.format.font.color = "#595959";
     const ref = ws.getRange("B4"); ref.load("left,top");
     await ctx.sync();
@@ -751,7 +764,8 @@ async function gerarModelo(m) {
     const alturaMax = Math.max(...m.cartoes.map((c) => TIPOS[c.tipo].H));
     let linha = 4 + Math.ceil((alturaMax + 40) / 15) + 2;
     let x = ref.left;
-    const cab = ws.getRange(`A${linha - 1}`); cab.values = [["Dados dos gráficos – altere os números e os comentários; os cartões se atualizam com o painel aberto."]];
+    const cab = ws.getRange(`A${linha - 1}`); cab.values = [[en ? "Chart data – change the numbers and comments; the cards update while the panel is open."
+      : "Dados dos gráficos – altere os números e os comentários; os cartões se atualizam com o painel aberto."]];
     cab.format.font.italic = true; cab.format.font.color = "#7F7F7F";
     for (const c of m.cartoes) {
       const nl = c.valores.length, nc = c.valores[0].length;
@@ -772,7 +786,7 @@ async function gerarModelo(m) {
       const r = await lerFonte(ctx, fonte);
       const dados = lerDados(r.values, r.text, false);
       const spec = { tipo: c.tipo, titulo: c.titulo, W: c.W ?? TIPOS[c.tipo].W, H: TIPOS[c.tipo].H, anot: anotacoesPadrao(c.tipo),
-        porLinha: c.porLinha, modo: modoPadrao(), barras: {} };
+        porLinha: c.porLinha, modo: modoPadrao(), barras: {}, idioma, resolucao: +$("resolucao").value || 4 };
       const g = montarGrafico(dados, spec, estilo);
       await desenharNoExcel(ctx, ws, g, x, ref.top, montarMeta(fonte, spec, estilo));
       x += g.largura + 24;
@@ -782,15 +796,43 @@ async function gerarModelo(m) {
     ws.getRange("A:A").format.columnWidth = 90;
   });
   await recarregarLista();
-  msg(`Modelo “${m.nome}” criado na aba “${nomeAba}” com ${total} gráfico(s). Troque os números e os comentários na tabela de baixo.`, "ok");
+  msg(`Modelo “${m.nome}”${en ? " (EN-US)" : ""} criado na aba “${nomeAba}” com ${total} gráfico(s). Troque os números e os comentários na tabela de baixo.`, "ok");
 }
 
 // ----------------------------------------------------------------- atualização automática
+// Atualização automática. Qualquer alteração feita por um suplemento apaga o histórico do Ctrl+Z
+// do Excel; por isso o padrão ("sair") só redesenha quando a seleção sai da área dos dados.
+function zonaDaFonte(f) {
+  let a;
+  try { a = parseA1(f.address); } catch { return null; }
+  return { ...a, r2: f.autoLinhas !== false || f.tabela ? a.r2 + 500 : a.r2 };
+}
+function graficosAfetados(mud) {
+  return (st.graficos ?? []).filter((g) => {
+    const zona = zonaDaFonte(g.meta.fonte);
+    return zona && mud.some((m) => st.abas?.[m.abaId] === g.meta.fonte.sheet && intersecta(parseA1(m.address), zona));
+  });
+}
 function aoMudar(ev) {
-  if (!$("autoAtualizar").checked) return;
+  const modo = $("autoAtualizar").value;
+  if (modo === "manual") return;
   st.pendentes.push({ abaId: ev.worksheetId, address: ev.address });
   clearTimeout(st.timer);
-  st.timer = setTimeout(() => seguro(processarMudancas), 900);
+  if (modo === "imediata" || !st.temSelecao) st.timer = setTimeout(() => seguro(processarMudancas), 900);
+  else if (!graficosAfetados(st.pendentes).length) st.pendentes.length = 0; // mudança fora das fontes
+  else msg("Os gráficos serão atualizados quando você sair da área dos dados (o Ctrl+Z continua funcionando até lá).");
+}
+function aoSelecionar(ev) {
+  if ($("autoAtualizar").value !== "sair" || !st.pendentes.length) return;
+  let sel;
+  try { sel = parseA1(String(ev.address).split("!").pop().split(",")[0]); } catch { return; }
+  // "dentro" = a tabela de dados de verdade (+1 linha embaixo, para quem está acrescentando linhas)
+  const ainda = graficosAfetados(st.pendentes).some((g) => {
+    let a;
+    try { a = parseA1(g.meta.fonte.address); } catch { return false; }
+    return st.abas?.[ev.worksheetId] === g.meta.fonte.sheet && intersecta(sel, { ...a, r2: a.r2 + 1 });
+  });
+  if (!ainda) { clearTimeout(st.timer); st.timer = setTimeout(() => seguro(processarMudancas), 150); }
 }
 
 async function processarMudancas() {
@@ -799,13 +841,7 @@ async function processarMudancas() {
   try {
     const mud = st.pendentes.splice(0);
     await recarregarLista();
-    const afetados = st.graficos.filter((g) => {
-      const f = g.meta.fonte;
-      let a;
-      try { a = parseA1(f.address); } catch { return false; }
-      const zona = { ...a, r2: f.autoLinhas !== false || f.tabela ? a.r2 + 500 : a.r2 };
-      return mud.some((m) => st.abas[m.abaId] === f.sheet && intersecta(parseA1(m.address), zona));
-    });
+    const afetados = graficosAfetados(mud);
     if (!afetados.length) return;
     for (const a of [...afetados]) {
       for (const m of membrosDoGrupo(a.meta.spec.grupoEscala, a.meta.spec.tipo, a.id))
@@ -827,6 +863,9 @@ async function registrarEventos() {
   await Excel.run(async (ctx) => {
     ctx.workbook.worksheets.onChanged.add(aoMudar);
     await ctx.sync();
+    // seleção (ExcelApi 1.9): sem ela, o modo "sair" vira "na hora"
+    try { ctx.workbook.worksheets.onSelectionChanged.add(aoSelecionar); await ctx.sync(); st.temSelecao = true; }
+    catch { st.temSelecao = false; }
   });
 }
 
@@ -835,7 +874,7 @@ function carregarDemo(i) {
   const d = DEMOS[i];
   st.valores = d.valores; st.textos = textosDemo(d.valores);
   st.fonte = null;
-  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0, ordem: d.ordem ?? "planilha", destaque: d.destaque };
+  st.spec = { tipo: d.tipo, titulo: d.titulo, corte: d.corte ?? 0, W: TIPOS[d.tipo].W, H: TIPOS[d.tipo].H, anot: anotacoesPadrao(d.tipo), topN: d.topN ?? 0, ordem: d.ordem ?? "planilha", destaque: d.destaque, idioma: $("idioma").value };
   if (d.semCagr) st.spec.anot.cagr.on = false;
   if (d.estilo) $("estilo").value = d.estilo;
   processarValores();
@@ -889,9 +928,14 @@ function ligarEventos() {
   $("btnAtualizarTodos").onclick = () => seguro(atualizarTodos);
   $("btnExemplos").onclick = () => seguro(gerarExemplos);
   $("modeloSel").innerHTML = MODELOS.map((m, i) => `<option value="${i}">${escHtml(m.nome)}</option>`).join("");
-  $("btnModelo").onclick = () => seguro(() => gerarModelo(MODELOS[+$("modeloSel").value]));
+  $("btnModelo").onclick = () => seguro(() => gerarModelo(modelosNoIdioma($("idioma").value)[+$("modeloSel").value]));
   $("listaGraficos").onchange = (e) => seguro(() => selecionarGrafico(e.target.value));
   $("tipo").onchange = (e) => trocarTipo(e.target.value);
+  $("idioma").value = idiomaPadrao();
+  $("idioma").onchange = () => { gravarPref(CHAVE_IDIOMA, $("idioma").value); lerForm(); preview(); };
+  $("resolucao").onchange = () => { gravarPref(CHAVE_RES, $("resolucao").value); lerForm(); };
+  $("autoAtualizar").value = lerPref(CHAVE_AUTO, "sair");
+  $("autoAtualizar").onchange = () => gravarPref(CHAVE_AUTO, $("autoAtualizar").value);
   $("btnSugerirTitulo").onclick = () => seguro(async () => sugerirTituloNoForm());
   $("grupoEscala").addEventListener("change", () => seguro(async () => { lerForm(); await atualizarCacheGrupo(); }));
   $("estilo").onchange = () => { if ($("estilo").value !== "__grafico") definirEstiloAtual($("estilo").value); lerCoresBarras(); preview(); };

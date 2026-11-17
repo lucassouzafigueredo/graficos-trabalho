@@ -4,13 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gráficos FP&amp;A</title>
-<link rel="stylesheet" href="taskpane.css?v=1.8.3">
+<link rel="stylesheet" href="taskpane.css?v=1.9.0">
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 </head>
 <body>
 <header>
   <h1>Gráficos FP&amp;A</h1>
-  <span id="versao" class="muted"></span>
+  <span class="topo-dir">
+    <select id="idioma" title="Idioma dos gráficos e modelos gerados (textos, números e título sugerido)">
+      <option value="pt">PT-BR</option><option value="en">EN-US</option>
+    </select>
+    <span id="versao" class="muted"></span>
+  </span>
 </header>
 
 <div id="avisoVersao" class="aviso" hidden><span></span> <button>Atualizar agora</button></div>
@@ -49,7 +54,14 @@
   </div>
   <p id="resumoDados" class="muted"></p>
   <label class="check"><input type="checkbox" id="autoLinhas" checked> Ajustar às linhas da tabela (inclui/exclui linhas até a 1ª linha vazia)</label>
-  <label class="check"><input type="checkbox" id="autoAtualizar" checked> Atualizar gráficos automaticamente quando os números mudarem</label>
+  <label>Atualizar os gráficos quando os números mudarem
+    <select id="autoAtualizar">
+      <option value="sair">Ao sair da área dos dados (o Ctrl+Z funciona enquanto você edita)</option>
+      <option value="imediata">Na hora (o Ctrl+Z deixa de funcionar)</option>
+      <option value="manual">Não (use “Atualizar todos”)</option>
+    </select>
+  </label>
+  <p class="muted">O Excel apaga o histórico do Ctrl+Z sempre que um suplemento altera a planilha. Por isso o padrão espera você sair da área dos dados para redesenhar.</p>
   <label class="check"><input type="checkbox" id="autoAbrir"> Abrir este painel sempre que este arquivo for aberto (salve o arquivo depois)</label>
 </section>
 
@@ -109,6 +121,12 @@
     <label title="O gráfico entra como uma única imagem de alta resolução: muito mais rápido. Para mudar algo, use o painel (Aplicar)."><input type="radio" name="modoDesenho" value="imagem"> Rápido (imagem)</label>
     <label title="Cada barra, texto e linha vira uma forma do Excel, editável à mão. Mais lento."><input type="radio" name="modoDesenho" value="formas"> Editável (formas)</label>
   </div>
+  <label id="lblResolucao">Resolução da imagem (modo Rápido)
+    <select id="resolucao">
+      <option value="4">Normal</option>
+      <option value="8">Alta – para PowerPoint</option>
+    </select>
+  </label>
   <div class="duas">
     <label>Largura <input id="largura" type="number" min="150" step="10"></label>
     <label id="lblAltura">Altura <input id="altura" type="number" min="100" step="10"></label>
@@ -303,6 +321,6 @@
   <button id="btnAplicar" class="primario" hidden>Aplicar ao gráfico selecionado na lista</button>
 </footer>
 
-<script type="module" src="taskpane.js?v=1.8.3"></script>
+<script type="module" src="taskpane.js?v=1.9.0"></script>
 </body>
 </html>

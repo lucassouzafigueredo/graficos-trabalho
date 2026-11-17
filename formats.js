@@ -1,8 +1,16 @@
-// Formatação numérica pt-BR (vírgula decimal) com sufixos K/M/B configuráveis
+// Formatação numérica com sufixos K/M/B configuráveis.
+// Idioma: pt-BR (1.234,5) ou en-US (1,234.5), escolhido por gráfico (spec.idioma).
 export const config = { sufMil: "K", sufMi: "M", sufBi: "B" };
 
-const f1 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const f0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+let LOC = "pt-BR";
+let f1, f0;
+export function definirIdioma(idioma) {
+  LOC = idioma === "en" ? "en-US" : "pt-BR";
+  f1 = new Intl.NumberFormat(LOC, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  f0 = new Intl.NumberFormat(LOC, { maximumFractionDigits: 0 });
+}
+export const localeAtual = () => LOC;
+definirIdioma("pt");
 
 export function fmtNum(v, comSinal = false) {
   const a = Math.abs(v);
@@ -18,7 +26,7 @@ export function fmtNum(v, comSinal = false) {
 }
 
 export function fmtPct(p, casas) {
-  const nf = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  const nf = new Intl.NumberFormat(LOC, { minimumFractionDigits: casas, maximumFractionDigits: casas });
   const s = nf.format(Math.abs(p) * 100) + "%";
   if (!/[1-9]/.test(s)) return s; // arredondou para zero: sem sinal
   if (p > 0) return "+" + s;
